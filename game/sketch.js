@@ -1,7 +1,6 @@
 
-
 import p5 from 'p5';
-import { CANVAS_WIDTH, CANVAS_HEIGHT, COLORS, PLAYER_SPEED, PLAYER_RADIUS, BOSS_RADIUS, BOSS_SQUARE_SIZE, BOSS_TRIANGLE_SIZE, BOSS_HEXAGON_SIZE, BOSS_HOURGLASS_SIZE, BOSS_MAX_HP, BULLET_SPEED, PLAYER_HITBOX, ENEMY_BULLET_BASE_SPEED, MAX_WEAPON_LEVEL, BASE_BULLET_SPEED_SCALE, OVAL_BOSS_MOVE_SPEED, SHIELD_DURATION, MAX_SHIELD_CHARGES } from '../constants.js';
+import { COLORS, PLAYER_SPEED, PLAYER_RADIUS, BOSS_RADIUS, BOSS_SQUARE_SIZE, BOSS_TRIANGLE_SIZE, BOSS_HEXAGON_SIZE, BOSS_HOURGLASS_SIZE, BOSS_MATH_SIZE, BOSS_MAX_HP, BULLET_SPEED, PLAYER_HITBOX, ENEMY_BULLET_BASE_SPEED, MAX_WEAPON_LEVEL, BASE_BULLET_SPEED_SCALE, OVAL_BOSS_MOVE_SPEED, SHIELD_DURATION, MAX_SHIELD_CHARGES } from '../constants.js';
 import { GameState, PowerUpType, WeaponType } from '../types.js';
 import { Patterns } from './patterns.js';
 
@@ -14,7 +13,9 @@ export const createSketch = (
   setWeaponInfo,
   triggerShieldRef,
   setPlayerStatus,
-  bulletSpeedRef
+  bulletSpeedRef,
+  targetW,
+  targetH
 ) => {
   return (p) => {
     // --- Game Entities ---
@@ -23,7 +24,7 @@ export const createSketch = (
     
     // Player
     let player = {
-      pos: p.createVector(CANVAS_WIDTH / 2, CANVAS_HEIGHT - 100),
+      pos: p.createVector(targetW / 2, targetH - 100),
       hp: 100,
       radius: PLAYER_RADIUS,
       hitbox: PLAYER_HITBOX,
@@ -41,7 +42,7 @@ export const createSketch = (
 
     // Boss
     let boss = {
-      pos: p.createVector(CANVAS_WIDTH / 2, 100),
+      pos: p.createVector(targetW / 2, 100),
       vel: p.createVector(3, 2),
       hp: BOSS_MAX_HP,
       maxHp: BOSS_MAX_HP,
@@ -80,7 +81,16 @@ export const createSketch = (
           length: 450,
           bobR: 35
       },
-      fateBeams: [] // Array of active beams
+      fateBeams: [], // Array of active beams
+      
+      // Math Boss Specific
+      mathState: 'SPIN', // SPIN, CALCULATE, ATTACK
+      mathTimer: 0,
+      operands: [0, 0],
+      operator: '+',
+      mathResult: 0,
+      displayNums: [0, 0], // For animation
+      clones: [] // For multiplication attacks
     };
 
     // Game State Logic
@@ -107,14 +117,14 @@ export const createSketch = (
 
     // --- Setup ---
     p.setup = () => {
-      p.createCanvas(CANVAS_WIDTH, CANVAS_HEIGHT);
+      p.createCanvas(targetW, targetH);
       p.frameRate(60);
       
       // Init stars
       for(let i=0; i<100; i++) {
         stars.push({
-          x: p.random(CANVAS_WIDTH), 
-          y: p.random(CANVAS_HEIGHT), 
+          x: p.random(p.width), 
+          y: p.random(p.height), 
           z: p.random(0.5, 3)
         });
       }
@@ -137,7 +147,7 @@ export const createSketch = (
 
     // --- Reset ---
     const resetGame = (bossType = 'RANDOM') => {
-      player.pos = p.createVector(CANVAS_WIDTH / 2, CANVAS_HEIGHT - 100);
+      player.pos = p.createVector(p.width / 2, p.height - 100);
       player.hp = 100;
       player.bullets = [];
       player.weaponType = WeaponType.DEFAULT;
@@ -152,7 +162,7 @@ export const createSketch = (
 
       boss.hp = BOSS_MAX_HP;
       boss.phase = 0;
-      boss.pos = p.createVector(CANVAS_WIDTH / 2, 100);
+      boss.pos = p.createVector(p.width / 2, 100);
       boss.vel = p.createVector(p.random([-OVAL_BOSS_MOVE_SPEED, OVAL_BOSS_MOVE_SPEED]), p.random(OVAL_BOSS_MOVE_SPEED*0.7, OVAL_BOSS_MOVE_SPEED));
       boss.active = true;
       boss.dashState = 'IDLE';
@@ -178,11 +188,17 @@ export const createSketch = (
       boss.pendulum = { phase: 0, angle: 0, length: 450, bobR: 35 };
       boss.fateBeams = [];
       
+      boss.mathState = 'SPIN';
+      boss.mathTimer = 120; // Start with longer spin
+      boss.operands = [0, 0];
+      boss.displayNums = [0, 0];
+      boss.clones = [];
+      
       // Select boss type
       if (bossType !== 'RANDOM') {
           boss.type = bossType;
       } else {
-          const bosses = ['CIRCLE', 'SQUARE', 'TRIANGLE', 'HEART', 'OVAL', 'HEXAGON', 'HOURGLASS'];
+          const bosses = ['CIRCLE', 'SQUARE', 'TRIANGLE', 'HEART', 'OVAL', 'HEXAGON', 'HOURGLASS', 'MATH'];
           boss.type = p.random(bosses);
       }
 
@@ -219,16 +235,33 @@ export const createSketch = (
     };
 
     // --- Helpers ---
-    const spawnEnemyBullet = (x, y, vx, vy, speed, color, shape = 'CIRCLE', bounces = 0) => {
-      enemyBullets.push({
+    const spawnEnemyBullet = (x, y, vx, vy, speed, color, shape = 'CIRCLE', bounces = 0, canSplit = false, accelerating = false, subType = null) => {
+      let b = {
         pos: p.createVector(x, y),
         vel: p.createVector(vx * speed, vy * speed),
         color: color,
         r: 6,
         shape: shape, 
         angle: 0,
-        bounces: bounces 
-      });
+        bounces: bounces,
+        canSplit: canSplit,
+        splitTimer: canSplit ? p.random(30, 60) : 0,
+        splitGen: canSplit ? 2 : 0, // Generations of splitting
+        accelerating: accelerating,
+        speed: speed,
+        subType: subType // For Geometry Barrage or Binary drift
+      };
+      
+      // Binary Bullet Logic: Randomize 0 or 1
+      if (shape === 'BINARY') {
+          b.text = p.random() > 0.5 ? '1' : '0';
+          if (b.text === '1') {
+              // '1's drift horizontally
+              b.vel.x = p.random(-1, 1);
+          }
+      }
+      
+      enemyBullets.push(b);
     };
 
     const spawnMeteorAttack = (x, y, targetX, targetY, delay = 60, size = 15) => {
@@ -245,7 +278,7 @@ export const createSketch = (
     
     const spawnStasisOrb = () => {
         stasisOrbs.push({
-            x: p.random(50, CANVAS_WIDTH-50),
+            x: p.random(50, p.width-50),
             y: p.random(50, 200),
             vx: p.random(-1, 1),
             vy: p.random(1, 2),
@@ -257,7 +290,7 @@ export const createSketch = (
       if (enemies.length >= 25) return; 
 
       const type = forcedType || (p.random() > 0.5 ? 'drone' : 'swooper');
-      const x = forcedX !== null ? forcedX : p.random(50, CANVAS_WIDTH - 50);
+      const x = forcedX !== null ? forcedX : p.random(50, p.width - 50);
       const y = forcedY !== null ? forcedY : -30;
       
       let hp = 30;
@@ -300,7 +333,9 @@ export const createSketch = (
         else if (r < 0.75) type = PowerUpType.HOMING;
         else type = PowerUpType.HEAL;
       }
-      powerUps.push({ x, y, type, radius: 10, active: true, trap: isTrap });
+      // Constrain spawn to screen
+      const cx = p.constrain(x, 20, p.width - 20);
+      powerUps.push({ x: cx, y, type, radius: 10, active: true, trap: isTrap });
     };
 
     const createExplosion = (x, y, color, count) => {
@@ -374,15 +409,15 @@ export const createSketch = (
         // Randomly offset slices of the canvas
         const slices = 5;
         for(let i=0; i<slices; i++) {
-            const y = p.random(CANVAS_HEIGHT);
+            const y = p.random(p.height);
             const h = p.random(10, 50);
             const offset = p.random(-20, 20);
-            p.image(p.get(0, y, CANVAS_WIDTH, h), offset, y);
+            p.image(p.get(0, y, p.width, h), offset, y);
             
             // Random rectangles
             p.fill(p.random([COLORS.BOSS_HOURGLASS, 255]), p.random(100));
             p.noStroke();
-            p.rect(p.random(CANVAS_WIDTH), p.random(CANVAS_HEIGHT), p.random(50), p.random(10));
+            p.rect(p.random(p.width), p.random(p.height), p.random(50), p.random(10));
         }
     };
 
@@ -407,9 +442,9 @@ export const createSketch = (
       p.fill(255, 100);
       for(let star of stars) {
         star.y += star.z;
-        if(star.y > CANVAS_HEIGHT) {
+        if(star.y > p.height) {
            star.y = 0;
-           star.x = p.random(CANVAS_WIDTH);
+           star.x = p.random(p.width);
         }
         p.circle(star.x, star.y, star.z);
       }
@@ -467,17 +502,17 @@ export const createSketch = (
             let targetY = player.pos.y;
             
             const canvasRect = p.canvas.getBoundingClientRect();
-            const scaleX = CANVAS_WIDTH / canvasRect.width;
-            const scaleY = CANVAS_HEIGHT / canvasRect.height;
+            const scaleX = p.width / canvasRect.width;
+            const scaleY = p.height / canvasRect.height;
             
             if (p.touches.length > 0) {
                let t = p.touches[0];
                targetX = (t.x - canvasRect.left) * scaleX;
                // Offset Y slightly up so finger doesn't cover ship, especially on mobile
                targetY = (t.y - canvasRect.top) * scaleY - 60; 
-            } else if (p.mouseX >= 0 && p.mouseX <= CANVAS_WIDTH && p.mouseY >= 0 && p.mouseY <= CANVAS_HEIGHT) {
-               targetX = p.mouseX * (CANVAS_WIDTH / p.width);
-               targetY = p.mouseY * (CANVAS_HEIGHT / p.height);
+            } else if (p.mouseX >= 0 && p.mouseX <= p.width && p.mouseY >= 0 && p.mouseY <= p.height) {
+               targetX = p.mouseX * (p.width / p.width); // Redundant calc simplified
+               targetY = p.mouseY * (p.height / p.height);
             }
             dx = (targetX - player.pos.x) * 0.2 * speedMult;
             dy = (targetY - player.pos.y) * 0.2 * speedMult;
@@ -489,8 +524,8 @@ export const createSketch = (
       let nextY = player.pos.y + dy;
       if (!checkBlockerCollision(player.pos.x, nextY, PLAYER_RADIUS)) player.pos.y = nextY;
 
-      player.pos.x = p.constrain(player.pos.x, PLAYER_RADIUS, CANVAS_WIDTH - PLAYER_RADIUS);
-      player.pos.y = p.constrain(player.pos.y, PLAYER_RADIUS, CANVAS_HEIGHT - PLAYER_RADIUS);
+      player.pos.x = p.constrain(player.pos.x, PLAYER_RADIUS, p.width - PLAYER_RADIUS);
+      player.pos.y = p.constrain(player.pos.y, PLAYER_RADIUS, p.height - PLAYER_RADIUS);
 
       // --- 2. Weapon & Shooting ---
       if (player.weaponTimer > 0) {
@@ -592,6 +627,7 @@ export const createSketch = (
             if (boss.type === 'OVAL') exColor = COLORS.BOSS_OVAL;
             if (boss.type === 'HEXAGON') exColor = COLORS.BOSS_HEXAGON;
             if (boss.type === 'HOURGLASS') exColor = COLORS.BOSS_HOURGLASS;
+            if (boss.type === 'MATH') exColor = COLORS.BOSS_MATH;
 
             createExplosion(boss.pos.x, boss.pos.y, exColor, 40);
 
@@ -599,7 +635,7 @@ export const createSketch = (
             if (boss.type === 'HEART') {
                 if (currentStageIndex === 3) { // Stage 4: Lust Orbs
                     spawnMinion('lust_orb', 100, 100);
-                    spawnMinion('lust_orb', CANVAS_WIDTH - 100, 100);
+                    spawnMinion('lust_orb', p.width - 100, 100);
                 }
                 if (currentStageIndex === 4) { // Stage 5: Shield + Grow
                     boss.shield = boss.maxShield;
@@ -632,7 +668,7 @@ export const createSketch = (
         
         // --- BOSS MOVEMENT & BEHAVIOR ---
         if (boss.type === 'CIRCLE') {
-            boss.pos.x = CANVAS_WIDTH / 2 + Math.sin(frame * 0.02) * 150;
+            boss.pos.x = p.width / 2 + Math.sin(frame * 0.02) * 150;
             boss.pos.y = 100 + Math.sin(frame * 0.05) * 20;
             
             if (stageTransitionTimer < 140) {
@@ -641,14 +677,14 @@ export const createSketch = (
                  if (currentStageIndex >= 1) if (frame % 120 === 0) Patterns.ring(p, boss.pos, 12 + currentStageIndex * 2, spawnEnemyBullet, baseSpeed * 0.8);
                  if (currentStageIndex >= 2) if (frame % 90 === 0) Patterns.spread(p, boss.pos, player.pos, 5, p.PI/3, spawnEnemyBullet, baseSpeed);
                  if (currentStageIndex >= 3) if (frame % 5 === 0) Patterns.cross(p, boss.pos, frame, spawnEnemyBullet, baseSpeed);
-                 if (currentStageIndex >= 4) if (frame % 60 === 0) Patterns.converge(p, player.pos, CANVAS_WIDTH, CANVAS_HEIGHT, spawnEnemyBullet, baseSpeed * 0.5);
+                 if (currentStageIndex >= 4) if (frame % 60 === 0) Patterns.converge(p, player.pos, p.width, p.height, spawnEnemyBullet, baseSpeed * 0.5);
             }
 
         } else if (boss.type === 'SQUARE') {
             boss.angle += 0.02; 
             switch(boss.dashState) {
                 case 'IDLE':
-                    boss.pos.x = p.lerp(boss.pos.x, CANVAS_WIDTH/2 + Math.sin(frame * 0.01) * 100, 0.05);
+                    boss.pos.x = p.lerp(boss.pos.x, p.width/2 + Math.sin(frame * 0.01) * 100, 0.05);
                     boss.pos.y = p.lerp(boss.pos.y, 100 + Math.cos(frame * 0.03) * 20, 0.05);
                     if (currentStageIndex >= 1 && p.random() < 0.01) {
                          boss.dashState = 'CHARGE';
@@ -692,7 +728,7 @@ export const createSketch = (
                     break;
                 case 'RECOVER':
                     boss.dashTimer--;
-                    boss.pos.x = p.lerp(boss.pos.x, CANVAS_WIDTH/2, 0.05);
+                    boss.pos.x = p.lerp(boss.pos.x, p.width/2, 0.05);
                     boss.pos.y = p.lerp(boss.pos.y, 100, 0.05);
                     if (boss.dashTimer <= 0) {
                         boss.dashState = 'IDLE';
@@ -704,7 +740,7 @@ export const createSketch = (
             if (stageTransitionTimer < 140 && boss.dashState !== 'DASH') {
                 if (currentStageIndex >= 0) if (frame % 8 === 0) Patterns.squareSpiral(p, boss.pos, frame, spawnEnemyBullet, baseSpeed);
                 if (currentStageIndex >= 1) if (frame % 40 === 0) Patterns.rapidStream(p, boss.pos, player.pos, spawnEnemyBullet, baseSpeed + 3);
-                if (currentStageIndex >= 2) if (frame % 100 === 0) Patterns.wallDown(p, CANVAS_WIDTH, spawnEnemyBullet, baseSpeed * 0.8);
+                if (currentStageIndex >= 2) if (frame % 100 === 0) Patterns.wallDown(p, p.width, spawnEnemyBullet, baseSpeed * 0.8);
                 if (currentStageIndex >= 3) if (frame % 30 === 0) Patterns.spread(p, boss.pos, player.pos, 7, p.PI/2, spawnEnemyBullet, baseSpeed);
                 if (currentStageIndex >= 4) if (frame % 10 === 0) Patterns.chaos(p, boss.pos, spawnEnemyBullet, baseSpeed + 2);
             }
@@ -713,7 +749,7 @@ export const createSketch = (
              boss.angle -= 0.02; 
             boss.summonTimer++;
             if (boss.teleportState === 'IDLE') {
-                boss.pos.x = CANVAS_WIDTH / 2 + Math.sin(frame * 0.03) * 200;
+                boss.pos.x = p.width / 2 + Math.sin(frame * 0.03) * 200;
                 boss.pos.y = 80 + Math.abs(Math.sin(frame * 0.04)) * 50;
                 if (frame % 300 === 0) {
                     boss.teleportState = 'OUT';
@@ -725,7 +761,7 @@ export const createSketch = (
                     boss.opacity = 0;
                     boss.teleportState = 'WAIT';
                     boss.teleportTimer = 20;
-                    boss.pos.x = p.random(100, CANVAS_WIDTH - 100);
+                    boss.pos.x = p.random(100, p.width - 100);
                     boss.pos.y = p.random(50, 200);
                 }
             } else if (boss.teleportState === 'WAIT') {
@@ -816,7 +852,7 @@ export const createSketch = (
             }
 
         } else if (boss.type === 'HEART') {
-             boss.pos.x = CANVAS_WIDTH / 2 + Math.sin(frame * 0.02) * 100;
+             boss.pos.x = p.width / 2 + Math.sin(frame * 0.02) * 100;
             boss.pos.y = 120 + Math.sin(frame * 0.04) * 30;
             if (stageTransitionTimer < 140) {
                 if (currentStageIndex >= 0) if (frame % 60 === 0) Patterns.heartSpread(p, boss.pos, frame, spawnEnemyBullet, baseSpeed);
@@ -835,13 +871,13 @@ export const createSketch = (
             boss.squash.x = p.lerp(boss.squash.x, 1, 0.1);
             boss.squash.y = p.lerp(boss.squash.y, 1, 0.1);
             const rX = 60; const rY = 40; let bounced = false;
-            if (boss.pos.x < rX || boss.pos.x > CANVAS_WIDTH - rX) {
-                boss.vel.x *= -1; boss.pos.x = p.constrain(boss.pos.x, rX, CANVAS_WIDTH - rX);
+            if (boss.pos.x < rX || boss.pos.x > p.width - rX) {
+                boss.vel.x *= -1; boss.pos.x = p.constrain(boss.pos.x, rX, p.width - rX);
                 createExplosion(boss.pos.x, boss.pos.y, COLORS.BOSS_OVAL, 10);
                 boss.squash.x = 0.6; boss.squash.y = 1.4; bounced = true;
             }
-            if (boss.pos.y < rY || boss.pos.y > CANVAS_HEIGHT - rY) {
-                boss.vel.y *= -1; boss.pos.y = p.constrain(boss.pos.y, rY, CANVAS_HEIGHT - rY);
+            if (boss.pos.y < rY || boss.pos.y > p.height - rY) {
+                boss.vel.y *= -1; boss.pos.y = p.constrain(boss.pos.y, rY, p.height - rY);
                 createExplosion(boss.pos.x, boss.pos.y, COLORS.BOSS_OVAL, 10);
                 boss.squash.x = 1.4; boss.squash.y = 0.6; bounced = true;
             }
@@ -885,18 +921,25 @@ export const createSketch = (
                     break;
                 case 'TELEPORT_OUT':
                     boss.hexState = 'TELEPORT_IN';
-                    let nx = p.random(100, CANVAS_WIDTH - 100);
+                    let nx = p.random(100, p.width - 100);
                     let ny = p.random(50, 250);
                     if (currentStageIndex >= 4) ny = p.random(50, 400); 
                     boss.pos.x = nx; boss.pos.y = ny;
                     break;
                 case 'TELEPORT_IN':
                      createExplosion(boss.pos.x, boss.pos.y, COLORS.BOSS_LIGHTNING, 15);
-                     if (currentStageIndex >= 1) Patterns.rapidStream(p, boss.pos, player.pos, spawnEnemyBullet, baseSpeed + 6);
+                     // Spawn a targeted meteor from off-screen instead of shooting directly
+                     if (currentStageIndex >= 1) {
+                         const angle = p.random(p.TWO_PI);
+                         const dist = 500;
+                         const sx = player.pos.x + Math.cos(angle) * dist;
+                         const sy = player.pos.y + Math.sin(angle) * dist;
+                         spawnMeteorAttack(sx, sy, player.pos.x, player.pos.y, 30, 30);
+                     }
                      boss.hexState = 'IDLE'; boss.hexTimer = 0;
                     break;
              }
-             if (currentStageIndex >= 4 && frame % 300 < 100) { boss.pos.x = p.lerp(boss.pos.x, CANVAS_WIDTH/2, 0.1); boss.pos.y = p.lerp(boss.pos.y, CANVAS_HEIGHT/2 - 100, 0.1); }
+             if (currentStageIndex >= 4 && frame % 300 < 100) { boss.pos.x = p.lerp(boss.pos.x, p.width/2, 0.1); boss.pos.y = p.lerp(boss.pos.y, p.height/2 - 100, 0.1); }
              if (stageTransitionTimer < 140) {
                  for (let i = boss.pendingAttacks.length - 1; i >= 0; i--) {
                      let atk = boss.pendingAttacks[i];
@@ -916,14 +959,25 @@ export const createSketch = (
                      }
                  }
                  if (currentStageIndex >= 0 && frame % 20 === 0) Patterns.hexagonSpin(p, boss.pos, boss.angle, BOSS_HEXAGON_SIZE, spawnEnemyBullet, baseSpeed * 1.5);
-                 if (currentStageIndex >= 1 && frame % 30 === 0 && boss.hexState === 'IDLE') Patterns.rapidStream(p, boss.pos, player.pos, spawnEnemyBullet, baseSpeed + 6);
-                 if (currentStageIndex >= 2 && frame % 25 === 0) { const startX1 = p.random(0, CANVAS_WIDTH); spawnMeteorAttack(startX1, -50, startX1, CANVAS_HEIGHT, 40, 25); const startX2 = p.random(0, CANVAS_WIDTH); spawnMeteorAttack(startX2, -50, startX2, CANVAS_HEIGHT, 40, 25); }
-                 if (currentStageIndex >= 3 && frame % 50 === 0) { spawnMeteorAttack(-50, player.pos.y, CANVAS_WIDTH, player.pos.y, 40, 20); spawnMeteorAttack(player.pos.x, -50, player.pos.x, CANVAS_HEIGHT, 40, 20); }
-                 if (currentStageIndex >= 4 && frame % 10 === 0) { const angle = p.random(p.TWO_PI); const dist = 600; const sx = CANVAS_WIDTH/2 + Math.cos(angle) * dist; const sy = CANVAS_HEIGHT/2 + Math.sin(angle) * dist; spawnMeteorAttack(sx, sy, player.pos.x, player.pos.y, 30, 30); }
+                 
+                 // STAGE 1: Basic Meteor Rain (Replaces aimed stream)
+                 if (currentStageIndex === 1 && frame % 50 === 0) {
+                     const sx = p.random(p.width);
+                     spawnMeteorAttack(sx, -50, sx, p.height, 50, 25);
+                 }
+                 
+                 // STAGE 2+: Heavier Meteor Rain
+                 if (currentStageIndex >= 2 && frame % 25 === 0) { const startX1 = p.random(0, p.width); spawnMeteorAttack(startX1, -50, startX1, p.height, 40, 25); const startX2 = p.random(0, p.width); spawnMeteorAttack(startX2, -50, startX2, p.height, 40, 25); }
+                 
+                 // STAGE 3+: Cross Grid
+                 if (currentStageIndex >= 3 && frame % 50 === 0) { spawnMeteorAttack(-50, player.pos.y, p.width, player.pos.y, 40, 20); spawnMeteorAttack(player.pos.x, -50, player.pos.x, p.height, 40, 20); }
+                 
+                 // STAGE 4+: Overload
+                 if (currentStageIndex >= 4 && frame % 10 === 0) { const angle = p.random(p.TWO_PI); const dist = 600; const sx = p.width/2 + Math.cos(angle) * dist; const sy = p.height/2 + Math.sin(angle) * dist; spawnMeteorAttack(sx, sy, player.pos.x, player.pos.y, 30, 30); }
              }
 
         } else if (boss.type === 'HOURGLASS') {
-            boss.pos.x = CANVAS_WIDTH / 2 + Math.sin(frame * 0.01) * 100;
+            boss.pos.x = p.width / 2 + Math.sin(frame * 0.01) * 100;
             boss.pos.y = 120 + Math.cos(frame * 0.02) * 20;
             
             // Record History for Echo
@@ -938,7 +992,7 @@ export const createSketch = (
                 
                 // Draw Pendulum
                 p.push();
-                p.translate(CANVAS_WIDTH/2, -50); // Anchor at top center
+                p.translate(p.width/2, -50); // Anchor at top center
                 p.rotate(boss.pendulum.angle);
                 
                 // Draw Chain
@@ -948,7 +1002,8 @@ export const createSketch = (
                 
                 // Pendulum Sand Trail
                 if (globalTimeScale > 0 && frame % 5 === 0) {
-                     const worldX = CANVAS_WIDTH/2 + Math.sin(boss.pendulum.angle) * boss.pendulum.length;
+                     // FIX: In p5 rotation, + rotation moves Y axis to negative X. So we need to subtract sin(angle)
+                     const worldX = p.width/2 - Math.sin(boss.pendulum.angle) * boss.pendulum.length;
                      const worldY = -50 + Math.cos(boss.pendulum.angle) * boss.pendulum.length;
                      spawnEnemyBullet(worldX, worldY, p.random(-0.2, 0.2), 0.5, baseSpeed, COLORS.BOSS_BULLET_SAND, 'CIRCLE');
                 }
@@ -965,7 +1020,8 @@ export const createSketch = (
                 p.endShape(p.CLOSE);
                 
                 // Collision
-                const bladeWorldX = CANVAS_WIDTH/2 + Math.sin(boss.pendulum.angle) * boss.pendulum.length;
+                // FIX: Match visual rotation coordinate system
+                const bladeWorldX = p.width/2 - Math.sin(boss.pendulum.angle) * boss.pendulum.length;
                 const bladeWorldY = -50 + Math.cos(boss.pendulum.angle) * boss.pendulum.length;
                 
                 if (p.dist(bladeWorldX, bladeWorldY, player.pos.x, player.pos.y) < boss.pendulum.bobR + player.hitbox && player.invulnerable <= 0 && player.shieldTimer <= 0) {
@@ -998,8 +1054,8 @@ export const createSketch = (
                     boss.fateBeams.forEach(b => {
                         b.active = true;
                         b.width = 0;
-                        if (b.orientation === 'V') b.x = p.random(50, CANVAS_WIDTH - 50);
-                        if (b.orientation === 'H') b.y = p.random(50, CANVAS_HEIGHT - 50);
+                        if (b.orientation === 'V') b.x = p.random(50, p.width - 50);
+                        if (b.orientation === 'H') b.y = p.random(50, p.height - 50);
                     });
                 }
                 
@@ -1014,11 +1070,11 @@ export const createSketch = (
                         p.fill(COLORS.BOSS_FATE_BEAM[0], COLORS.BOSS_FATE_BEAM[1], COLORS.BOSS_FATE_BEAM[2], 100);
                         
                         if (beam.orientation === 'V') {
-                             p.rect(beam.x - beam.width/2, 0, beam.width, CANVAS_HEIGHT);
-                             p.fill(255, 200); p.rect(beam.x - beam.width/6, 0, beam.width/3, CANVAS_HEIGHT);
+                             p.rect(beam.x - beam.width/2, 0, beam.width, p.height);
+                             p.fill(255, 200); p.rect(beam.x - beam.width/6, 0, beam.width/3, p.height);
                         } else {
-                             p.rect(0, beam.y - beam.width/2, CANVAS_WIDTH, beam.width);
-                             p.fill(255, 200); p.rect(0, beam.y - beam.width/6, CANVAS_WIDTH, beam.width/3);
+                             p.rect(0, beam.y - beam.width/2, p.width, beam.width);
+                             p.fill(255, 200); p.rect(0, beam.y - beam.width/6, p.width, beam.width/3);
                         }
 
                         // Collision
@@ -1057,7 +1113,7 @@ export const createSketch = (
                     drawGlitch(); // Visual glitch on stop
                     
                     // Spawn Frozen Rain (Stage 3+)
-                    for(let x=20; x<CANVAS_WIDTH; x+=40) {
+                    for(let x=20; x<p.width; x+=40) {
                         spawnEnemyBullet(x, -20, 0, 2, baseSpeed, COLORS.BOSS_BULLET_SAND, 'CIRCLE');
                     }
                     
@@ -1112,7 +1168,7 @@ export const createSketch = (
             
             // --- SAND GEYSERS (Upward streams) ---
             if (currentStageIndex >= 3 && frame % 150 === 0 && globalTimeScale > 0) {
-                Patterns.sandGeyser(p, CANVAS_WIDTH, CANVAS_HEIGHT, spawnEnemyBullet, baseSpeed);
+                Patterns.sandGeyser(p, p.width, p.height, spawnEnemyBullet, baseSpeed);
             }
 
             if (stageTransitionTimer < 140 && boss.timeState === 'NORMAL') {
@@ -1126,7 +1182,7 @@ export const createSketch = (
                 // --- STAGE 5 SHADOW CLONE (Double Bullets) ---
                 const sources = [boss.pos];
                 if (currentStageIndex >= 4) {
-                    sources.push(p.createVector(CANVAS_WIDTH - boss.pos.x, boss.pos.y));
+                    sources.push(p.createVector(p.width - boss.pos.x, boss.pos.y));
                 }
 
                 sources.forEach((source, index) => {
@@ -1137,7 +1193,7 @@ export const createSketch = (
                         Patterns.hourglassSplash(p, source, frame, (x,y,vx,vy,s,cl,sh,b) => spawnEnemyBullet(x,y,vx,vy,s,c||cl,sh,b), baseSpeed);
                     }
                     if (currentStageIndex >= 1 && frame % 120 === 0) {
-                        Patterns.sandstorm(p, source, CANVAS_WIDTH, (x,y,vx,vy,s,cl,sh,b) => spawnEnemyBullet(x,y,vx,vy,s,c||cl,sh,b), baseSpeed);
+                        Patterns.sandstorm(p, source, p.width, (x,y,vx,vy,s,cl,sh,b) => spawnEnemyBullet(x,y,vx,vy,s,c||cl,sh,b), baseSpeed);
                     }
                     if (currentStageIndex >= 2 && frame % 5 === 0 && p.random() < 0.2) {
                         Patterns.aimed(p, source, player.pos, (x,y,vx,vy,s,cl,sh,b) => spawnEnemyBullet(x,y,vx,vy,s,c||cl,sh,b), baseSpeed);
@@ -1157,602 +1213,798 @@ export const createSketch = (
                 
                 // Timeline Collapse (Walls)
                 if (currentStageIndex >= 4 && frame % 90 === 0) {
-                    Patterns.timelineCollapse(p, CANVAS_WIDTH, CANVAS_HEIGHT, spawnEnemyBullet, baseSpeed);
+                    Patterns.timelineCollapse(p, p.width, p.height, spawnEnemyBullet, baseSpeed);
+                }
+            }
+        } else if (boss.type === 'MATH') {
+            // Spin numbers
+            boss.pos.x = p.lerp(boss.pos.x, p.width / 2, 0.05);
+            boss.pos.y = p.lerp(boss.pos.y, 100, 0.05);
+            
+            if (stageTransitionTimer < 140) {
+                switch(boss.mathState) {
+                    case 'SPIN':
+                        boss.mathTimer--;
+                        if (frame % 5 === 0) {
+                            let maxR = 9;
+                            if (currentStageIndex > 1) maxR = 20;
+                            if (currentStageIndex > 3) maxR = 99;
+                            boss.displayNums[0] = Math.floor(p.random(1, maxR));
+                            boss.displayNums[1] = Math.floor(p.random(1, maxR));
+                        }
+                        if (boss.mathTimer <= 0) {
+                            boss.mathState = 'RESOLVE';
+                        }
+                        break;
+                    case 'RESOLVE':
+                        // Decide Operator based on stage
+                        const ops = ['+'];
+                        if (currentStageIndex >= 0) ops.push('-');
+                        if (currentStageIndex >= 1) ops.push('/');
+                        if (currentStageIndex >= 2) ops.push('x'); // Stage 3: Matrix Rain
+                        if (currentStageIndex >= 3) ops.push('^'); // Stage 4: Geometry
+                        if (currentStageIndex >= 4) { // Stage 5: Golden Ratio
+                            if (p.random() < 0.6) ops.push('PHI'); // Use Phi more often
+                        }
+                        
+                        boss.operator = p.random(ops);
+                        
+                        // Scale numbers heavily by stage
+                        let maxRange = 9;
+                        if (currentStageIndex >= 1) maxRange = 20;
+                        if (currentStageIndex >= 2) maxRange = 30;
+                        if (currentStageIndex >= 3) maxRange = 50; 
+                        if (currentStageIndex >= 4) maxRange = 99;
+                        
+                        // Determine operands
+                        if (boss.operator === '+') {
+                            boss.operands = [Math.floor(p.random(1, maxRange)), Math.floor(p.random(1, maxRange))];
+                            boss.mathResult = boss.operands[0] + boss.operands[1];
+                        } else if (boss.operator === '-') {
+                             boss.operands = [Math.floor(p.random(1, maxRange)), Math.floor(p.random(1, maxRange))];
+                             boss.mathResult = boss.operands[0] - boss.operands[1];
+                        } else if (boss.operator === '/') {
+                             boss.mathResult = Math.floor(p.random(2, 6 + currentStageIndex)); 
+                             const denominator = Math.floor(p.random(2, 5));
+                             boss.operands[0] = boss.mathResult * denominator;
+                             boss.operands[1] = denominator;
+                        } else if (boss.operator === 'x') {
+                             const a = Math.floor(p.random(3, 8 + currentStageIndex));
+                             const b = Math.floor(p.random(2, 6 + currentStageIndex));
+                             boss.operands = [a, b];
+                             boss.mathResult = a * b; // Used for Matrix Rain count
+                        } else if (boss.operator === '^') {
+                             boss.operands[0] = Math.floor(p.random(2, 6)); // Increase base
+                             boss.operands[1] = Math.floor(p.random(2, 4)); // Increase power
+                             boss.mathResult = Math.min(150, Math.pow(boss.operands[0], boss.operands[1]));
+                        } else if (boss.operator === 'PHI') {
+                             boss.mathResult = 150; // High count for spiral
+                             boss.operands = [1, 1]; // Fib seed
+                        }
+                        
+                        boss.displayNums = [...boss.operands];
+                        boss.mathTimer = 30; // Wait a bit showing result
+                        boss.mathState = 'ATTACK';
+                        break;
+                    case 'ATTACK':
+                        boss.mathTimer--;
+                        
+                        // Fire Logic
+                        if (boss.mathTimer === 20) {
+                            if (boss.operator === '+') {
+                                // Addition: Direct aimed shots
+                                let count = Math.min(boss.mathResult, 50); 
+                                Patterns.mathPlus(p, boss.pos, player.pos, count, spawnEnemyBullet, baseSpeed + 2);
+                            } else if (boss.operator === '-') {
+                                // Subtraction: Side attacks or Heal
+                                if (boss.mathResult < 0) {
+                                    Patterns.mathSide(p, p.width, p.height, p.height/2, spawnEnemyBullet, baseSpeed, true);
+                                    Patterns.mathSide(p, p.width, p.height, p.height/3, spawnEnemyBullet, baseSpeed, true);
+                                } else {
+                                    let c = Math.min(Math.abs(boss.mathResult), 20);
+                                    for(let i=0; i<c; i++) {
+                                        setTimeout(() => {
+                                            Patterns.mathSide(p, p.width, p.height, p.random(100, p.height-100), spawnEnemyBullet, baseSpeed, false);
+                                        }, i * 100);
+                                    }
+                                }
+                            } else if (boss.operator === '/') {
+                                // Division: FRACTAL CLUSTER SHOT (Recursive Mitosis)
+                                let count = Math.min(boss.mathResult, 15);
+                                Patterns.mathDiv(p, boss.pos, count, spawnEnemyBullet, baseSpeed);
+                            } else if (boss.operator === 'x') {
+                                // Multiplication: BINARY MATRIX RAIN (0s and 1s)
+                                let count = Math.min(boss.mathResult * 2, 80); 
+                                Patterns.matrixRain(p, p.width, count, spawnEnemyBullet, baseSpeed);
+                            } else if (boss.operator === '^') {
+                                // Power: EXPONENTIAL SPIRAL (Accelerating bullets)
+                                Patterns.mathPowerSpiral(p, boss.pos, boss.mathResult, spawnEnemyBullet, baseSpeed);
+                            } else if (boss.operator === 'PHI') {
+                                // Golden Spiral
+                                // Handled in draw loop while state is ATTACK
+                            }
+                        }
+                        
+                        if (boss.operator === 'PHI') {
+                             Patterns.goldenSpiral(p, boss.pos, frame, spawnEnemyBullet, baseSpeed);
+                        }
+                        
+                        if (boss.mathTimer <= 0) {
+                            // Recovery time based on stage intensity
+                            boss.mathState = 'SPIN';
+                            boss.mathTimer = 60 - (currentStageIndex * 5); 
+                            if (boss.mathTimer < 20) boss.mathTimer = 20;
+                        }
+                        break;
                 }
             }
         }
       }
 
-      // --- 4. Minion & Enemy Logic ---
-      
-      if (boss.type !== 'TRIANGLE' && frame % 180 === 0 && boss.hp > 0 && stageTransitionTimer === 0 && globalTimeScale > 0) {
-        if (boss.type === 'HEART' && p.random() < 0.3) {
-        } else {
-           spawnMinion();
-        }
-      }
-      
-      // Update Stasis Orbs
-      for (let i = stasisOrbs.length - 1; i >= 0; i--) {
-          let orb = stasisOrbs[i];
-          if (globalTimeScale > 0) {
-              // Homing Logic
-              let angle = Math.atan2(player.pos.y - orb.y, player.pos.x - orb.x);
-              orb.vx = p.lerp(orb.vx, Math.cos(angle) * 2, 0.05);
-              orb.vy = p.lerp(orb.vy, Math.sin(angle) * 2, 0.05);
-              orb.x += orb.vx * globalTimeScale;
-              orb.y += orb.vy * globalTimeScale;
+      // --- Draw Boss ---
+      if (boss.active) {
+          // Flash effect on hit
+          if (stageTransitionTimer > 0) {
+               if (frame % 4 < 2) p.fill(255); else p.fill(COLORS[`BOSS_${boss.type}`]);
+               boss.opacity = 255;
+          } else {
+              p.fill(COLORS[`BOSS_${boss.type}`][0], COLORS[`BOSS_${boss.type}`][1], COLORS[`BOSS_${boss.type}`][2], boss.opacity);
           }
           
-          p.noStroke();
-          p.fill(COLORS.BOSS_STASIS_ORB[0], COLORS.BOSS_STASIS_ORB[1], COLORS.BOSS_STASIS_ORB[2], 150);
-          p.circle(orb.x, orb.y, orb.radius * 2);
-          // Pulse
-          p.stroke(255); p.strokeWeight(1); p.noFill();
-          p.circle(orb.x, orb.y, orb.radius * 2 + Math.sin(frame * 0.2) * 5);
-
-          if (player.invulnerable <= 0 && player.shieldTimer <= 0) {
-              if (p.dist(orb.x, orb.y, player.pos.x, player.pos.y) < orb.radius + player.hitbox) {
-                  player.frozen = true;
-                  player.freezeTimer = 90; // 1.5 Seconds freeze
-                  stasisOrbs.splice(i, 1);
-                  createExplosion(player.pos.x, player.pos.y, COLORS.BOSS_STASIS_ORB, 10);
+          p.push();
+          p.translate(boss.pos.x, boss.pos.y);
+          p.rotate(boss.angle);
+          p.scale(boss.squash.x, boss.squash.y);
+          p.stroke(255);
+          p.strokeWeight(3);
+          
+          if (boss.type === 'CIRCLE') {
+              p.circle(0, 0, boss.radius * 2);
+          } else if (boss.type === 'SQUARE') {
+              p.rectMode(p.CENTER);
+              p.rect(0, 0, BOSS_SQUARE_SIZE, BOSS_SQUARE_SIZE);
+              // Forcefield
+              p.noFill(); p.stroke(255, 100); p.strokeWeight(1);
+              p.rect(0, 0, BOSS_SQUARE_SIZE + 20 + Math.sin(frame*0.1)*10, BOSS_SQUARE_SIZE + 20 + Math.sin(frame*0.1)*10);
+          } else if (boss.type === 'TRIANGLE') {
+              p.beginShape();
+              for(let i=0; i<3; i++) {
+                  let a = (p.TWO_PI/3) * i - p.PI/2;
+                  p.vertex(Math.cos(a) * BOSS_TRIANGLE_SIZE, Math.sin(a) * BOSS_TRIANGLE_SIZE);
               }
-          }
-          if (orb.y > CANVAS_HEIGHT + 50 || orb.y < -50) stasisOrbs.splice(i, 1);
-      }
-      
-      // Sand Traps Logic
-      if (boss.type === 'HOURGLASS' && currentStageIndex >= 1 && frame % 180 === 0 && globalTimeScale > 0) {
-          sandTraps.push({ x: p.random(50, CANVAS_WIDTH-50), y: p.random(50, CANVAS_HEIGHT-50), r: 40, life: 300 });
-      }
-      for (let i = sandTraps.length - 1; i >= 0; i--) {
-          let t = sandTraps[i];
-          if (globalTimeScale > 0) t.life--;
-          p.noStroke(); p.fill(COLORS.BOSS_BULLET_SAND[0], COLORS.BOSS_BULLET_SAND[1], COLORS.BOSS_BULLET_SAND[2], 100);
-          p.circle(t.x, t.y, t.r * 2 + Math.sin(frame * 0.1) * 5);
-          // Swirl effect
-          p.stroke(200, 180, 100, 150); p.noFill(); p.arc(t.x, t.y, t.r*1.5, t.r*1.5, frame*0.1, frame*0.1 + 2);
-          if (t.life <= 0) sandTraps.splice(i, 1);
-      }
-
-      for (let i = enemies.length - 1; i >= 0; i--) {
-        const e = enemies[i];
-        
-        // Update enemy pos based on time scale
-        if (globalTimeScale > 0) {
-            if (e.type === 'drone') {
-                e.pos.y += 2 * globalTimeScale;
-                e.pos.x += Math.sin(frame * 0.05 + i) * 1 * globalTimeScale;
-            } else if (e.type === 'swooper') {
-                e.pos.y += 3 * globalTimeScale;
-                e.pos.x += Math.sin(frame * 0.1 + i) * 3 * globalTimeScale;
-            } else if (e.type === 'orbiter') {
-                if (e.parent && e.parent.active) {
-                    e.orbitAngle += 0.05 * globalTimeScale;
-                    const radius = 80;
-                    e.pos.x = e.parent.pos.x + Math.cos(e.orbitAngle) * radius;
-                    e.pos.y = e.parent.pos.y + Math.sin(e.orbitAngle) * radius;
-                } else {
-                    e.pos.y += 5 * globalTimeScale;
-                }
-            } else if (e.type === 'mini_boss') {
-                e.pos.x = p.lerp(e.pos.x, CANVAS_WIDTH / 2 + Math.sin(frame * 0.02 + i) * 200, 0.02 * globalTimeScale);
-                e.pos.y = p.lerp(e.pos.y, 200 + Math.sin(frame * 0.04 + i) * 30, 0.02 * globalTimeScale);
-            } else if (e.type === 'lust_orb') {
-                const angle = Math.atan2(player.pos.y - e.pos.y, player.pos.x - e.pos.x);
-                e.pos.x += Math.cos(angle) * 0.75 * globalTimeScale; 
-                e.pos.y += Math.sin(angle) * 0.75 * globalTimeScale; 
-            }
-        }
-        
-        // Draw Lust Orb HP Bar
-        if (e.type === 'lust_orb') {
-             p.fill(COLORS.ENEMY_LUST_ORB);
-            p.stroke(255);
-            p.strokeWeight(3);
-            p.circle(e.pos.x, e.pos.y, e.radius * 2);
-            p.noStroke();
-            p.fill(255, 100);
-            p.circle(e.pos.x - e.radius*0.3, e.pos.y - e.radius*0.3, e.radius*0.5);
-            p.noStroke(); p.fill(0, 255, 0); p.rect(e.pos.x - 40, e.pos.y - e.radius - 15, 80 * (e.hp/e.maxHp), 6);
-            if (player.invulnerable <= 0 && player.shieldTimer <= 0 && p.dist(e.pos.x, e.pos.y, player.pos.x, player.pos.y) < e.radius + player.hitbox) {
-                player.hp -= 50; setHealth(player.hp); player.invulnerable = 120; createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 20);
-            }
-        }
-
-        if (e.type !== 'lust_orb' && globalTimeScale > 0) {
-            e.shootTimer -= 1 * globalTimeScale;
-            if (e.shootTimer <= 0) {
-               if (e.type === 'drone') {
-                  spawnEnemyBullet(e.pos.x, e.pos.y, 0, 1, 4 * BASE_BULLET_SPEED_SCALE, COLORS.ENEMY_BULLET);
-                  e.shootTimer = 120;
-               } else if (e.type === 'swooper') {
-                  const angle = Math.atan2(player.pos.y - e.pos.y, player.pos.x - e.pos.x);
-                  spawnEnemyBullet(e.pos.x, e.pos.y, Math.cos(angle), Math.sin(angle), 4 * BASE_BULLET_SPEED_SCALE, COLORS.ENEMY_BULLET);
-                  e.shootTimer = 120;
-               } else if (e.type === 'orbiter') {
-                  const angle = e.orbitAngle;
-                  spawnEnemyBullet(e.pos.x, e.pos.y, Math.cos(angle), Math.sin(angle), 3 * BASE_BULLET_SPEED_SCALE, COLORS.ENEMY_ORBITER);
-                  e.shootTimer = 180;
-               } else if (e.type === 'mini_boss') {
-                  Patterns.spread(p, e.pos, player.pos, 3, p.PI/4, spawnEnemyBullet, 4 * BASE_BULLET_SPEED_SCALE);
-                  if (p.random() < 0.3) spawnMinion('drone', e.pos.x, e.pos.y + 20);
-                  e.shootTimer = 100;
+              p.endShape(p.CLOSE);
+              // Inner Triangle
+              p.noFill(); p.stroke(255); p.strokeWeight(1);
+              p.rotate(frame * 0.05);
+              p.beginShape();
+              for(let i=0; i<3; i++) {
+                  let a = (p.TWO_PI/3) * i - p.PI/2;
+                  p.vertex(Math.cos(a) * (BOSS_TRIANGLE_SIZE/2), Math.sin(a) * (BOSS_TRIANGLE_SIZE/2));
+              }
+              p.endShape(p.CLOSE);
+          } else if (boss.type === 'HEART') {
+               p.beginShape();
+               for (let t = 0; t < p.TWO_PI; t += 0.1) {
+                    let r = 2; // scale
+                    if (currentStageIndex >= 4) r = 3; 
+                    let x = 16 * Math.pow(Math.sin(t), 3);
+                    let y = -(13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t)); 
+                    p.vertex(x * r, y * r);
                }
+               p.endShape(p.CLOSE);
+          } else if (boss.type === 'OVAL') {
+               p.ellipse(0, 0, 100, 60);
+               p.noFill(); p.stroke(255, 200); 
+               p.ellipse(0, 0, 60 + Math.sin(frame * 0.2)*10, 30);
+          } else if (boss.type === 'HEXAGON') {
+               drawLightningHex(0, 0, BOSS_HEXAGON_SIZE, 0, COLORS.BOSS_HEXAGON);
+          } else if (boss.type === 'HOURGLASS') {
+               // Interpolate angle for smooth flip
+               boss.angle = p.lerp(boss.angle, boss.targetAngle, 0.1);
+               // Top Bulb
+               p.noFill(); p.stroke(COLORS.BOSS_HOURGLASS); p.strokeWeight(4);
+               p.triangle(-30, -50, 30, -50, 0, 0);
+               p.triangle(-30, 50, 30, 50, 0, 0);
+               // Sand
+               p.noStroke(); p.fill(255, 215, 0);
+               let sandLevelTop = 10 + Math.sin(frame * 0.05) * 5;
+               let sandLevelBot = 10 + frame % 40; 
+               if (boss.timeState === 'STOPPED') {
+                   p.fill(100); // Grey sand
+               }
+               p.triangle(-20, -40, 20, -40, 0, -5); // Top sand
+               p.triangle(-20, 45, 20, 45, 0, 45 - sandLevelBot*0.5); // Bot sand
+               // Stream
+               if (boss.timeState !== 'STOPPED') {
+                   p.stroke(255, 215, 0); p.strokeWeight(2);
+                   p.line(0, -5, 0, 45);
+               }
+          } else if (boss.type === 'MATH') {
+               p.rectMode(p.CENTER);
+               p.stroke(255); p.strokeWeight(2);
+               p.fill(50);
+               p.rect(0, 0, 80, 80, 10);
+               
+               // INVULNERABLE VISUAL
+               if (boss.mathState !== 'SPIN') {
+                   p.noFill();
+                   p.stroke(150);
+                   p.strokeWeight(4);
+                   p.rect(0, 0, 90 + Math.sin(frame * 0.2)*5, 90 + Math.sin(frame * 0.2)*5, 15);
+                   p.stroke(255, 0, 0, 100);
+                   p.line(-40, -40, 40, 40);
+                   p.line(40, -40, -40, 40);
+               }
+               
+               p.textAlign(p.CENTER, p.CENTER);
+               p.textSize(40);
+               p.fill(255);
+               p.noStroke();
+               if (boss.mathState === 'SPIN') {
+                   p.text(p.random(['+', '-', '/', 'x', '^', 'Φ']), 0, 0);
+                   p.textSize(15);
+                   p.fill(0, 255, 0);
+                   if (frame % 10 < 5) p.text("VULNERABLE", 0, 60);
+               } else {
+                   if (boss.operator === 'PHI') p.textSize(30);
+                   p.text(boss.operator === 'PHI' ? 'Φ' : boss.operator, 0, 0);
+               }
+               
+               // Floating Numbers
+               p.textSize(30);
+               p.fill(200, 200, 255);
+               p.text(boss.displayNums[0], -80 + Math.sin(frame * 0.1)*10, Math.cos(frame * 0.1)*10);
+               p.text(boss.displayNums[1], 80 + Math.sin(frame * 0.1 + p.PI)*10, Math.cos(frame * 0.1 + p.PI)*10);
+               
+               // Result
+               if (boss.mathState === 'ATTACK' || boss.mathState === 'RESOLVE') {
+                   p.textSize(20);
+                   p.fill(100, 255, 100);
+                   let res = boss.mathResult;
+                   if (boss.operator === 'x' || boss.operator === '^') res = 'MAX'; // Simplified display
+                   if (boss.operator === 'PHI') res = 'GOLDEN';
+                   p.text("= " + res, 0, -60);
+               }
+          }
+          p.pop();
+          
+          // Shield Bar for Heart Boss Stage 5
+          if (boss.type === 'HEART' && currentStageIndex >= 4 && boss.shield > 0) {
+              p.noFill();
+              p.stroke(COLORS.BOSS_SHIELD);
+              p.strokeWeight(4);
+              p.arc(boss.pos.x, boss.pos.y, 140, 140, -p.PI/2, -p.PI/2 + (p.TWO_PI * (boss.shield/boss.maxShield)));
+              p.noStroke();
+          }
+      }
+
+      // --- 4. Entities Update & Render ---
+
+      // Minions
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        let e = enemies[i];
+        
+        // Behavior
+        if (e.type === 'drone') {
+            e.pos.y += 1.5;
+        } else if (e.type === 'swooper') {
+            e.pos.y += 2.5;
+            e.pos.x += Math.sin(frame * 0.05) * 3;
+            // Aim at player
+            let angle = Math.atan2(player.pos.y - e.pos.y, player.pos.x - e.pos.x);
+            e.pos.x += Math.cos(angle) * 1;
+        } else if (e.type === 'orbiter') {
+            if (e.parent && e.parent.active) {
+                e.orbitAngle += 0.05;
+                e.pos.x = e.parent.pos.x + Math.cos(e.orbitAngle) * 100;
+                e.pos.y = e.parent.pos.y + Math.sin(e.orbitAngle) * 100;
+            } else {
+                e.hp = 0; // Die if parent dies
             }
-    
-            // Minion Drawing
-            p.stroke(255); p.strokeWeight(2);
-            if (e.type === 'drone') { p.fill(COLORS.ENEMY); p.rect(e.pos.x - 10, e.pos.y - 10, 20, 20); } 
-            else if (e.type === 'swooper') { p.fill(COLORS.ENEMY); p.triangle(e.pos.x, e.pos.y + 10, e.pos.x - 10, e.pos.y - 10, e.pos.x + 10, e.pos.y - 10); } 
-            else if (e.type === 'orbiter') { p.fill(COLORS.ENEMY_ORBITER); p.circle(e.pos.x, e.pos.y, e.radius * 2); } 
-            else if (e.type === 'mini_boss') { p.fill(COLORS.ENEMY_MINI_BOSS); p.push(); p.translate(e.pos.x, e.pos.y); p.rotate(frame * 0.1); p.triangle(0, -20, -17, 10, 17, 10); p.pop(); p.noStroke(); p.fill(255, 0, 0); p.rect(e.pos.x - 20, e.pos.y - 40, 40, 4); p.fill(0, 255, 0); p.rect(e.pos.x - 20, e.pos.y - 40, 40 * (e.hp/e.maxHp), 4); }
+        } else if (e.type === 'mini_boss') {
+            e.pos.x += Math.sin(frame * 0.02) * 2;
+            e.pos.y = 150 + Math.cos(frame * 0.03) * 30;
+            if (frame % 120 === 0) spawnMinion('drone', e.pos.x, e.pos.y + 30);
+        } else if (e.type === 'lust_orb') {
+             // Slowly track player
+             let angle = Math.atan2(player.pos.y - e.pos.y, player.pos.x - e.pos.x);
+             e.pos.x += Math.cos(angle) * 0.75; // Slow
+             e.pos.y += Math.sin(angle) * 0.75;
         }
-        if (e.pos.y > CANVAS_HEIGHT + 50) { enemies.splice(i, 1); }
+
+        // Shoot
+        if (e.shootTimer > 0) e.shootTimer--;
+        else {
+           if (e.type === 'drone') { spawnEnemyBullet(e.pos.x, e.pos.y, 0, 1, baseSpeed * 0.8, COLORS.ENEMY_BULLET); e.shootTimer = 120; }
+           if (e.type === 'mini_boss') { Patterns.aimed(p, e.pos, player.pos, spawnEnemyBullet, baseSpeed); e.shootTimer = 90; }
+           if (e.type === 'orbiter') { Patterns.aimed(p, e.pos, player.pos, spawnEnemyBullet, baseSpeed); e.shootTimer = 100; }
+        }
+
+        // Draw
+        p.fill(e.type === 'lust_orb' ? COLORS.ENEMY_LUST_ORB : (e.type === 'mini_boss' ? COLORS.ENEMY_MINI_BOSS : COLORS.ENEMY));
+        p.noStroke();
+        p.circle(e.pos.x, e.pos.y, e.radius * 2);
+
+        // Bounds
+        if (e.pos.y > p.height + 50 || e.pos.x < -50 || e.pos.x > p.width + 50) {
+            enemies.splice(i, 1);
+        }
       }
 
-      // --- Draw Blockers ---
-      for (let b of blockers) {
-          p.rectMode(p.CENTER); p.noFill(); p.strokeWeight(3 + Math.sin(frame * 0.2) * 1); p.stroke(COLORS.BLOCKER[0], COLORS.BLOCKER[1], COLORS.BLOCKER[2]); p.rect(b.pos.x, b.pos.y, b.w, b.h); p.fill(COLORS.BLOCKER[0], COLORS.BLOCKER[1], COLORS.BLOCKER[2], 50); p.noStroke(); p.rect(b.pos.x, b.pos.y, b.w, b.h);
-      }
+      // Enemy Bullets
+      for (let i = enemyBullets.length - 1; i >= 0; i--) {
+        let b = enemyBullets[i];
+        
+        // Acceleration Logic (Math Boss)
+        if (b.accelerating) {
+            b.speed *= 1.03; // Exponential acceleration
+            b.vel.setMag(b.speed);
+        }
 
-      // --- Collisions ---
+        // Homing Logic for GEOMETRY Triangles
+        if (b.shape === 'GEOMETRY' && b.subType === 'TRIANGLE') {
+             let angle = Math.atan2(player.pos.y - b.pos.y, player.pos.x - b.pos.x);
+             b.vel.x = p.lerp(b.vel.x, Math.cos(angle) * b.speed, 0.05);
+             b.vel.y = p.lerp(b.vel.y, Math.sin(angle) * b.speed, 0.05);
+        }
+        
+        // Fractal Split Logic (Math Boss - Division)
+        if (b.canSplit && b.splitTimer > 0) {
+            b.splitTimer--;
+            if (b.splitTimer <= 0 && b.splitGen > 0) {
+                 // Split into 4 pieces (Cross shape) relative to current velocity
+                 createExplosion(b.pos.x, b.pos.y, b.color, 3);
+                 let currentAngle = Math.atan2(b.vel.y, b.vel.x);
+                 
+                 for(let k = 0; k < 4; k++) {
+                     // 4-way split: 0, 90, 180, 270 degrees offset
+                     let angleOffset = (p.HALF_PI * k); 
+                     let newAngle = currentAngle + angleOffset;
+                     spawnEnemyBullet(b.pos.x, b.pos.y, Math.cos(newAngle), Math.sin(newAngle), b.speed * 1.2, b.color, 'CIRCLE', 0, true);
+                     // Decrement generation for children
+                     enemyBullets[enemyBullets.length-1].splitGen = b.splitGen - 1;
+                 }
+                 enemyBullets.splice(i, 1);
+                 continue;
+            }
+        }
+        
+        // Frozen Logic
+        if (boss.type === 'HOURGLASS' && boss.timeState === 'STOPPED') {
+             // Do not move
+             if (b.shape === 'KNIFE') {
+                 // Vibrate
+                 p.push();
+                 p.translate(b.pos.x + p.random(-1, 1), b.pos.y + p.random(-1, 1));
+                 p.rotate(b.angle);
+                 p.fill(b.color);
+                 p.noStroke();
+                 p.triangle(-5, -3, -5, 3, 10, 0); // Knife shape
+                 p.pop();
+             } else {
+                 // Frozen circle
+                 p.fill(b.color);
+                 p.circle(b.pos.x, b.pos.y, b.r * 2);
+             }
+        } else {
+            // Normal Movement
+            if (b.shape === 'KNIFE') {
+                // Should already be moving from resume logic
+                b.pos.add(b.vel);
+            } else {
+                b.pos.x += b.vel.x * globalTimeScale;
+                b.pos.y += b.vel.y * globalTimeScale;
+            }
+
+            // Bouncing Logic (Oval Boss)
+            if (b.bounces > 0 || (b.shape === 'GEOMETRY' && b.subType === 'PENTAGON')) {
+                if (b.pos.x < 0 || b.pos.x > p.width) { b.vel.x *= -1; if(b.bounces > 0) b.bounces--; }
+                if (b.pos.y < 0 || b.pos.y > p.height) { b.vel.y *= -1; if(b.bounces > 0) b.bounces--; }
+            }
+
+            // Draw
+            p.fill(b.color);
+            p.noStroke();
+            if (b.shape === 'CIRCLE') {
+                p.circle(b.pos.x, b.pos.y, b.r * 2);
+            } else if (b.shape === 'RECT') {
+                p.push();
+                p.translate(b.pos.x, b.pos.y);
+                p.rotate(frame * 0.2);
+                p.rectMode(p.CENTER);
+                p.rect(0, 0, 10, 20);
+                p.pop();
+            } else if (b.shape === 'TRIANGLE') {
+                 p.push();
+                 p.translate(b.pos.x, b.pos.y);
+                 p.rotate(frame * 0.1);
+                 p.triangle(-15, -15, 15, -15, 0, 15); // Inverted Triangle (Panty-ish)
+                 p.pop();
+            } else if (b.shape === 'METEOR') {
+                 p.circle(b.pos.x, b.pos.y, 25);
+                 // Trail
+                 p.fill(255, 100);
+                 p.circle(b.pos.x - b.vel.x*2, b.pos.y - b.vel.y*2, 15);
+            } else if (b.shape === 'HEAL') {
+                p.fill(0, 255, 0);
+                p.textSize(10);
+                p.textAlign(p.CENTER, p.CENTER);
+                p.text("+", b.pos.x, b.pos.y);
+            } else if (b.shape === 'KNIFE') {
+                 p.push();
+                 p.translate(b.pos.x, b.pos.y);
+                 p.rotate(b.angle);
+                 p.triangle(-5, -3, -5, 3, 10, 0);
+                 p.pop();
+            } else if (b.shape === 'BINARY') {
+                 p.fill(0, 255, 100);
+                 p.textSize(14);
+                 p.textAlign(p.CENTER, p.CENTER);
+                 p.text(b.text || '1', b.pos.x, b.pos.y);
+            } else if (b.shape === 'GEOMETRY') {
+                 p.push();
+                 p.translate(b.pos.x, b.pos.y);
+                 p.rotate(frame * 0.1);
+                 if (b.subType === 'TRIANGLE') {
+                     p.triangle(0, -10, 8, 8, -8, 8);
+                 } else if (b.subType === 'SQUARE') {
+                     p.rectMode(p.CENTER);
+                     p.rect(0, 0, 16, 16);
+                 } else { // Pentagon
+                     p.beginShape();
+                     for(let k=0; k<5; k++) {
+                         let ang = (p.TWO_PI/5)*k - p.PI/2;
+                         p.vertex(Math.cos(ang)*10, Math.sin(ang)*10);
+                     }
+                     p.endShape(p.CLOSE);
+                 }
+                 p.pop();
+            }
+
+            // Bounds
+            if (b.pos.x < -50 || b.pos.x > p.width + 50 || b.pos.y < -50 || b.pos.y > p.height + 50) {
+                enemyBullets.splice(i, 1);
+            }
+        }
+      }
 
       // Player Bullets
       for (let i = player.bullets.length - 1; i >= 0; i--) {
-        const b = player.bullets[i];
+        let b = player.bullets[i];
         
         if (b.homing) {
-            let target = null;
-            let recordDist = Infinity;
-            for (const e of enemies) {
-                const d = p.dist(b.pos.x, b.pos.y, e.pos.x, e.pos.y);
-                if (d < recordDist && d < 300) { 
-                    recordDist = d;
-                    target = e;
-                }
+            let target = boss.active ? boss : null;
+            let minDist = 10000;
+            
+            // Prioritize Minions if close
+            for(let e of enemies) {
+                let d = p.dist(b.pos.x, b.pos.y, e.pos.x, e.pos.y);
+                if (d < minDist) { minDist = d; target = e; }
             }
-            if (!target && boss.active) {
-                 const d = p.dist(b.pos.x, b.pos.y, boss.pos.x, boss.pos.y);
-                 if (d < 400) target = boss;
+            if (boss.active) {
+                let d = p.dist(b.pos.x, b.pos.y, boss.pos.x, boss.pos.y);
+                if (d < minDist) target = boss;
             }
+
             if (target) {
-                const desired = p.createVector(target.pos.x - b.pos.x, target.pos.y - b.pos.y);
-                desired.setMag(BULLET_SPEED * 1.5);
-                const steer = p5.Vector.sub(desired, b.vel);
-                steer.limit(0.2);
-                b.vel.add(steer);
-                b.vel.limit(BULLET_SPEED * 1.5);
+                let angle = Math.atan2(target.pos.y - b.pos.y, target.pos.x - b.pos.x);
+                b.vel.x = p.lerp(b.vel.x, Math.cos(angle) * BULLET_SPEED, 0.1);
+                b.vel.y = p.lerp(b.vel.y, Math.sin(angle) * BULLET_SPEED, 0.1);
             }
         }
 
         b.pos.add(b.vel);
         
         p.fill(COLORS.PLAYER_BULLET);
-        p.noStroke();
         p.circle(b.pos.x, b.pos.y, 8);
 
-        if (b.pos.y < -10 || b.pos.x < -10 || b.pos.x > CANVAS_WIDTH + 10 || b.pos.y > CANVAS_HEIGHT + 10) {
-          player.bullets.splice(i, 1);
-          continue;
-        }
-
-        let hit = false;
-        for (let j = enemies.length - 1; j >= 0; j--) {
-            const e = enemies[j];
-            if (p.dist(b.pos.x, b.pos.y, e.pos.x, e.pos.y) < e.radius + 5) {
-                e.hp -= b.dmg;
-                hit = true;
-                createExplosion(e.pos.x, e.pos.y, COLORS.ENEMY, 3);
-                if (e.hp <= 0) {
-                    enemies.splice(j, 1);
-                    score += e.scoreVal || 100;
-                    setScore(score);
-                    createExplosion(e.pos.x, e.pos.y, COLORS.ENEMY, 10);
-                    if (p.random() < 0.50) spawnPowerUp(e.pos.x, e.pos.y);
-                }
-                break;
-            }
-        }
-        if (hit) {
-            player.bullets.splice(i, 1);
-            continue;
-        }
-
-        if (boss.active) {
-            if (boss.shield > 0) {
-                if (p.dist(b.pos.x, b.pos.y, boss.pos.x, boss.pos.y) < boss.radius + 15) {
-                    boss.shield -= b.dmg;
-                    player.bullets.splice(i, 1);
-                    createExplosion(b.pos.x, b.pos.y, COLORS.BOSS_SHIELD, 2);
-                    continue; 
-                }
-            }
-
-            let hitBoss = false;
-            if (boss.type === 'CIRCLE') {
-                if (p.dist(b.pos.x, b.pos.y, boss.pos.x, boss.pos.y) < boss.radius) hitBoss = true;
-            } else if (boss.type === 'SQUARE') {
-                if (Math.abs(b.pos.x - boss.pos.x) < BOSS_SQUARE_SIZE/2 && Math.abs(b.pos.y - boss.pos.y) < BOSS_SQUARE_SIZE/2) hitBoss = true;
-            } else if (boss.type === 'TRIANGLE') {
-                if (p.dist(b.pos.x, b.pos.y, boss.pos.x, boss.pos.y) < BOSS_TRIANGLE_SIZE) hitBoss = true;
-            } else if (boss.type === 'HEART') {
-                if (p.dist(b.pos.x, b.pos.y, boss.pos.x, boss.pos.y) < boss.radius) hitBoss = true;
-            } else if (boss.type === 'OVAL') {
-                 const dx = Math.abs(b.pos.x - boss.pos.x);
-                 const dy = Math.abs(b.pos.y - boss.pos.y);
-                 if ((dx*dx)/(60*60) + (dy*dy)/(40*40) <= 1) hitBoss = true;
-            } else if (boss.type === 'HEXAGON') {
-                 if (p.dist(b.pos.x, b.pos.y, boss.pos.x, boss.pos.y) < BOSS_HEXAGON_SIZE) hitBoss = true;
-            } else if (boss.type === 'HOURGLASS') {
-                 if (p.dist(b.pos.x, b.pos.y, boss.pos.x, boss.pos.y) < BOSS_HOURGLASS_SIZE) hitBoss = true;
-            }
-            
-            if (hitBoss && boss.opacity > 100) {
-                boss.hp -= b.dmg;
-                score += 10;
-                setScore(score);
-                setBossHealth((boss.hp / BOSS_MAX_HP) * 100);
-                player.bullets.splice(i, 1);
-                
-                if (boss.hp <= boss.nextPowerUpHp) {
-                     spawnPowerUp(p.random(50, CANVAS_WIDTH-50), p.random(100, 300));
-                     boss.nextPowerUpHp -= (BOSS_MAX_HP * 0.05);
-                     if (boss.hp <= boss.nextPowerUpHp) {
-                         boss.nextPowerUpHp = Math.floor(boss.hp / (BOSS_MAX_HP * 0.05)) * (BOSS_MAX_HP * 0.05);
-                     }
-                }
-
-                let exColor = COLORS.BOSS_CIRCLE;
-                if (boss.type === 'SQUARE') exColor = COLORS.BOSS_SQUARE;
-                if (boss.type === 'TRIANGLE') exColor = COLORS.BOSS_TRIANGLE;
-                if (boss.type === 'HEART') exColor = COLORS.BOSS_HEART;
-                if (boss.type === 'OVAL') exColor = COLORS.BOSS_OVAL;
-                if (boss.type === 'HEXAGON') exColor = COLORS.BOSS_HEXAGON;
-                if (boss.type === 'HOURGLASS') exColor = COLORS.BOSS_HOURGLASS;
-                
-                createExplosion(b.pos.x, b.pos.y, exColor, 2);
-            }
-        }
+        if (b.pos.y < -10 || b.pos.x < -10 || b.pos.x > p.width + 10) player.bullets.splice(i, 1);
       }
 
-      // Enemy Bullets
-      for (let i = enemyBullets.length - 1; i >= 0; i--) {
-        const b = enemyBullets[i];
-        
-        // Scale bullet movement by globalTimeScale
-        let scaledVel = b.vel.copy().mult(globalTimeScale);
-        b.pos.add(scaledVel);
-        
-        // Visual Trails on Rewind
-        if (timeRewindCycle > 240 && timeRewindCycle < 270 && globalTimeScale > 0) {
-             p.noStroke();
-             p.fill(255, 255, 0, 100);
-             p.circle(b.pos.x - b.vel.x * 2, b.pos.y - b.vel.y * 2, b.r);
-        }
-
-        if (b.bounces > 0) {
-            let bounced = false;
-            if (b.pos.x < 0) { b.pos.x = 0; b.vel.x *= -1; bounced = true; }
-            if (b.pos.x > CANVAS_WIDTH) { b.pos.x = CANVAS_WIDTH; b.vel.x *= -1; bounced = true; }
-            if (b.pos.y < 0) { b.pos.y = 0; b.vel.y *= -1; bounced = true; }
-            if (b.pos.y > CANVAS_HEIGHT) { b.pos.y = CANVAS_HEIGHT; b.vel.y *= -1; bounced = true; }
-            
-            if (bounced) {
-                b.bounces--;
-                createExplosion(b.pos.x, b.pos.y, b.color, 3);
-            }
-        }
-
-        if (b.shape === 'RECT') {
-            b.angle += 0.2 * globalTimeScale;
-            p.push(); p.translate(b.pos.x, b.pos.y); p.rotate(b.angle); p.fill(b.color); p.rect(0, 0, 15, 8); p.pop();
-        } else if (b.shape === 'TRIANGLE') {
-            p.fill(b.color); p.triangle(b.pos.x - 15, b.pos.y - 10, b.pos.x + 15, b.pos.y - 10, b.pos.x, b.pos.y + 15);
-        } else if (b.shape === 'METEOR') {
-            p.fill(b.color); p.noStroke(); p.circle(b.pos.x, b.pos.y, 20);
-            if (globalTimeScale > 0) particles.push({ x: b.pos.x, y: b.pos.y, vx: p.random(-1, 1), vy: p.random(-1, 1), life: 0.5, color: COLORS.BOSS_METEOR, size: p.random(4, 10) });
-        } else if (b.shape === 'KNIFE') {
-            p.push();
-            p.translate(b.pos.x, b.pos.y);
-            p.rotate(b.angle);
-            p.fill(b.color);
-            p.noStroke();
-            // Draw knife pointing in direction of angle
-            p.triangle(10, 0, -10, -5, -10, 5); 
-            p.pop();
-        } else {
-            p.fill(b.color);
-            p.circle(b.pos.x, b.pos.y, b.r * 2);
-        }
-
-        if (b.pos.x < -100 || b.pos.x > CANVAS_WIDTH + 100 || b.pos.y < -100 || b.pos.y > CANVAS_HEIGHT + 100) {
-          enemyBullets.splice(i, 1);
-          continue;
-        }
-
-        if (player.invulnerable <= 0 && player.shieldTimer <= 0) {
-           const d = p.dist(b.pos.x, b.pos.y, player.pos.x, player.pos.y);
-           let collisionSize = b.r;
-           if (b.shape === 'TRIANGLE') collisionSize = 12;
-           if (b.shape === 'METEOR') collisionSize = 15;
-           if (b.shape === 'KNIFE') collisionSize = 8;
-
-           if (d < player.hitbox + collisionSize) {
-             player.hp -= b.shape === 'METEOR' ? 30 : 10;
-             setHealth(player.hp);
-             player.invulnerable = 60;
-             createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 10);
-             if (b.shape !== 'METEOR') enemyBullets.splice(i, 1); 
-           }
-        }
-      }
-
-      // Boss Body Collision
-      if (boss.active && player.invulnerable <= 0 && player.shieldTimer <= 0 && boss.opacity > 200) {
-          let dist = p.dist(player.pos.x, player.pos.y, boss.pos.x, boss.pos.y);
-          let threshold = boss.radius;
-          if (boss.type === 'SQUARE') threshold = BOSS_SQUARE_SIZE/1.5;
-          if (boss.type === 'TRIANGLE') threshold = BOSS_TRIANGLE_SIZE;
-          if (boss.type === 'HEART') threshold = boss.radius;
-          if (boss.type === 'OVAL') threshold = 40; 
-          if (boss.type === 'HEXAGON') threshold = BOSS_HEXAGON_SIZE;
-          if (boss.type === 'HOURGLASS') threshold = BOSS_HOURGLASS_SIZE;
-          
-          if (dist < threshold + player.hitbox) {
-              player.hp -= 20; 
-              setHealth(player.hp);
-              player.invulnerable = 90;
-              createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 20);
-              player.pos.y += 50;
-          }
-      }
-
-      // PowerUps
-      for (let i = powerUps.length - 1; i >= 0; i--) {
-        const pu = powerUps[i];
-        pu.y += 1.5;
-        p.noStroke();
-        let label = "";
-        if (pu.trap) {
-            p.fill(COLORS.POWERUP_TRAP); if (frame % 10 < 5) p.fill(COLORS.POWERUP_HEAL); label = "+";
-        } else {
-            switch(pu.type) {
-                case PowerUpType.SPREAD: p.fill(COLORS.POWERUP_SPREAD); label="S"; break;
-                case PowerUpType.RAPID: p.fill(COLORS.POWERUP_RAPID); label="R"; break;
-                case PowerUpType.HOMING: p.fill(COLORS.POWERUP_HOMING); label="H"; break;
-                case PowerUpType.HEAL: p.fill(COLORS.POWERUP_HEAL); label="+"; break;
-            }
-        }
-        p.circle(pu.x, pu.y, pu.radius * 2); p.fill(0); p.textAlign(p.CENTER, p.CENTER); p.textSize(12); p.text(label, pu.x, pu.y);
-        if (pu.y > CANVAS_HEIGHT + 20) { powerUps.splice(i, 1); continue; }
-        const d = p.dist(pu.x, pu.y, player.pos.x, player.pos.y);
-        if (d < player.radius + pu.radius) {
-          if (pu.trap) {
-              player.hp -= 30; setHealth(player.hp); createExplosion(player.pos.x, player.pos.y, COLORS.POWERUP_TRAP, 15); player.invulnerable = 30;
-          } else {
-              if (pu.type === PowerUpType.HEAL) { player.hp = Math.min(100, player.hp + 20); setHealth(player.hp); } else {
-                 let newType = WeaponType.DEFAULT;
-                 if (pu.type === PowerUpType.SPREAD) newType = WeaponType.SPREAD; if (pu.type === PowerUpType.RAPID) newType = WeaponType.RAPID; if (pu.type === PowerUpType.HOMING) newType = WeaponType.HOMING;
-                 if (player.weaponType === newType) { player.weaponLevel = Math.min(MAX_WEAPON_LEVEL, player.weaponLevel + 1); player.weaponTimer += 600; } else { player.weaponType = newType; player.weaponLevel = 1; player.weaponTimer = 600; }
-              }
-              score += 200;
-          }
-          powerUps.splice(i, 1);
-        }
-      }
-
-      // Draw Player
-      if (player.invulnerable % 10 < 5) {
-        p.fill(COLORS.PLAYER);
-        if (player.frozen) p.fill(150, 255, 255); // Visual cue for frozen player
-        p.stroke(255);
-        p.strokeWeight(2);
-        p.triangle(player.pos.x, player.pos.y - PLAYER_RADIUS, player.pos.x - PLAYER_RADIUS, player.pos.y + PLAYER_RADIUS, player.pos.x + PLAYER_RADIUS, player.pos.y + PLAYER_RADIUS);
-        p.fill(255, 0, 0); p.noStroke(); p.circle(player.pos.x, player.pos.y, player.hitbox * 2);
-        
-        if (player.shieldTimer > 0) {
-            p.noFill(); p.stroke(COLORS.PLAYER_SHIELD); p.strokeWeight(3); p.push(); p.translate(player.pos.x, player.pos.y); p.rotate(frame * 0.1);
-            const segments = 3; const r = PLAYER_RADIUS + 15;
-            for(let i=0; i<segments; i++) { p.arc(0, 0, r*2, r*2, i * p.TWO_PI/segments, (i * p.TWO_PI/segments) + 1.5); }
-            p.pop();
-        }
-      }
-      if (player.invulnerable > 0) player.invulnerable--;
-
-      // Draw Boss
-      if (boss.active) {
-        p.push();
-        if (boss.type === 'CIRCLE') {
-            p.fill(COLORS.BOSS_CIRCLE); p.stroke(255); p.strokeWeight(3);
-            const br = boss.radius + Math.sin(frame * 0.1) * 5; p.circle(boss.pos.x, boss.pos.y, br * 2);
-            p.noFill(); p.stroke(255, 100); p.circle(boss.pos.x, boss.pos.y, br * 2 + 10);
-        } else if (boss.type === 'SQUARE') {
-            p.translate(boss.pos.x, boss.pos.y); p.rotate(boss.angle);
-            p.fill(COLORS.BOSS_SQUARE); p.stroke(255); p.strokeWeight(3); p.rectMode(p.CENTER); p.rect(0, 0, BOSS_SQUARE_SIZE, BOSS_SQUARE_SIZE);
-            p.noFill(); p.stroke(255, 200, 0, 150); p.strokeWeight(2); p.rect(0, 0, BOSS_SQUARE_SIZE + 20 + Math.sin(frame * 0.1)*10, BOSS_SQUARE_SIZE + 20 + Math.sin(frame * 0.1)*10);
-        } else if (boss.type === 'TRIANGLE') {
-            p.translate(boss.pos.x, boss.pos.y); p.rotate(boss.angle);
-            p.fill(COLORS.BOSS_TRIANGLE); p.stroke(255, boss.opacity); p.strokeWeight(3);
-            const s = BOSS_TRIANGLE_SIZE; const h = s * Math.sqrt(3) / 2; p.triangle(0, -h, -s, h, s, h);
-            p.noFill(); p.stroke(200, 255, 200, boss.opacity); const s2 = s * (0.5 + Math.sin(frame * 0.1) * 0.2); const h2 = s2 * Math.sqrt(3) / 2; p.triangle(0, -h2, -s2, h2, s2, h2);
-        } else if (boss.type === 'HEART') {
-            p.translate(boss.pos.x, boss.pos.y); const scale = 1 + Math.sin(frame * 0.1) * 0.1; p.scale(scale);
-            p.fill(COLORS.BOSS_HEART); p.stroke(255); p.strokeWeight(3);
-            p.beginShape(); const r = boss.radius; p.vertex(0, r/2); p.bezierVertex(r, -r/2, r*2, -r/2, 0, r*1.5); p.bezierVertex(-r*2, -r/2, -r, -r/2, 0, r/2); p.endShape(p.CLOSE);
-            if (boss.shield > 0) { p.noFill(); p.stroke(COLORS.BOSS_SHIELD); p.strokeWeight(4); p.circle(0, r/2, r * 2.5); p.noStroke(); p.fill(COLORS.BOSS_SHIELD); p.rectMode(p.CENTER); p.rect(0, -r, r*2 * (boss.shield/boss.maxShield), 5); }
-        } else if (boss.type === 'OVAL') {
-             p.translate(boss.pos.x, boss.pos.y); p.scale(boss.squash.x, boss.squash.y);
-             p.fill(COLORS.BOSS_OVAL); p.stroke(255); p.strokeWeight(3); p.ellipse(0, 0, 120, 80);
-             p.noStroke(); p.fill(200, 150, 255, 200 + Math.sin(frame * 0.5) * 55); p.circle(0, 0, 30 + Math.sin(frame * 0.2) * 10);
-             p.noFill(); p.stroke(200, 100, 255, 150); p.strokeWeight(2); p.ellipse(0, 0, 140 + Math.sin(frame * 0.2)*10, 100 + Math.sin(frame * 0.2)*10);
-        } else if (boss.type === 'HEXAGON') {
-             p.translate(boss.pos.x, boss.pos.y); p.rotate(boss.angle);
-             p.fill(COLORS.BOSS_HEXAGON); p.stroke(255); p.strokeWeight(3);
-             drawLightningHex(0, 0, BOSS_HEXAGON_SIZE, 0, COLORS.BOSS_HEXAGON);
-        } else if (boss.type === 'HOURGLASS') {
-             // Draw Ghost Echo first (behind)
-             if (currentStageIndex >= 3 && boss.history.length > 30) {
-                 const record = boss.history[boss.history.length - 30];
-                 p.push();
-                 p.translate(record.x, record.y);
-                 p.rotate(record.angle);
-                 p.tint(255, 100); // Transparent
-                 
-                 p.fill(COLORS.BOSS_GHOST);
-                 p.stroke(255, 100);
-                 p.strokeWeight(2);
-                 p.triangle(-25, -40, 25, -40, 0, 0);
-                 p.triangle(-25, 40, 25, 40, 0, 0);
-                 
-                 p.pop();
-             }
-
-             // --- DRAW SHADOW CLONE (Stage 5) ---
-             if (currentStageIndex >= 4) {
-                 p.push();
-                 p.translate(CANVAS_WIDTH - boss.pos.x, boss.pos.y); // Mirror X
-                 
-                 p.rotate(boss.angle + Math.sin(frame * 0.05 + 1) * 0.1); 
-                 p.fill(COLORS.BOSS_SHADOW);
-                 p.stroke(255, 150);
-                 p.strokeWeight(2);
-                 p.triangle(-25, -40, 25, -40, 0, 0);
-                 p.triangle(-25, 40, 25, 40, 0, 0);
-                 p.pop();
-             }
-
-             p.translate(boss.pos.x, boss.pos.y);
-             
-             // Smooth rotation for flipping
-             boss.angle = p.lerp(boss.angle, boss.targetAngle, 0.1);
-             p.rotate(boss.angle + Math.sin(frame * 0.05) * 0.1); 
-
-             p.fill(COLORS.BOSS_HOURGLASS);
-             p.stroke(255);
-             p.strokeWeight(3);
-             
-             // Top Triangle
-             p.triangle(-25, -40, 25, -40, 0, 0);
-             // Bottom Triangle
-             p.triangle(-25, 40, 25, 40, 0, 0);
-             
-             // Sand Animation
-             p.noStroke();
-             p.fill(255, 255, 200);
-             
-             // Calculate sand flow based on global frame
-             const sandCycle = 120; // Frames for full flow
-             const sandLevel = (frame % sandCycle) / sandCycle;
-             
-             // Top Sand (Decreasing)
-             if (globalTimeScale > 0) {
-                 p.push();
-                 p.translate(0, -20);
-                 p.scale(1 - sandLevel);
-                 p.triangle(-15, -10, 15, -10, 0, 20); 
-                 p.pop();
-                 
-                 // Bottom Sand (Increasing)
-                 p.push();
-                 p.translate(0, 20);
-                 p.scale(sandLevel);
-                 p.triangle(-20, 20, 20, 20, 0, -10);
-                 p.pop();
-                 
-                 // Flow Line
-                 p.stroke(255, 255, 200);
-                 p.strokeWeight(2);
-                 p.line(0, 0, 0, 20);
-             } else {
-                 // Frozen Sand
-                 p.triangle(-15, -30, 15, -30, 0, -10);
-                 p.triangle(-15, 30, 15, 30, 0, 10);
-             }
-        }
-        p.pop();
-      }
-
-      for (let i = particles.length - 1; i >= 0; i--) {
-         let pt = particles[i];
-         pt.life -= 0.05;
+      // Power Ups
+      for (let i = powerUps.length - 1; i >= 0; i--) { // Iterate BACKWARDS to safely splice
+         let pu = powerUps[i];
+         if (!pu.active) continue;
          
-         if (pt.isShockwave) {
-             p.noFill();
-             p.stroke(pt.color);
-             p.strokeWeight(10 * pt.life);
-             pt.size += 20;
-             p.circle(pt.x, pt.y, pt.size);
-         } else {
-            pt.x += pt.vx; pt.y += pt.vy;
-            p.noStroke(); p.fill(pt.color[0], pt.color[1], pt.color[2], pt.life * 255); p.circle(pt.x, pt.y, pt.size);
+         pu.y += 2;
+         let col = COLORS.POWERUP_SPREAD;
+         if (pu.type === PowerUpType.RAPID) col = COLORS.POWERUP_RAPID;
+         if (pu.type === PowerUpType.HOMING) col = COLORS.POWERUP_HOMING;
+         if (pu.type === PowerUpType.HEAL) col = COLORS.POWERUP_HEAL;
+         
+         if (pu.trap) {
+             col = COLORS.POWERUP_TRAP;
+             // Glitch movement
+             pu.x += p.random(-2, 2);
          }
-         if (pt.life <= 0) particles.splice(i, 1);
+
+         p.fill(col);
+         // Pulse Animation
+         let r = pu.radius + Math.sin(frame * 0.1) * 2;
+         p.circle(pu.x, pu.y, r * 2);
+         
+         p.fill(0);
+         p.textAlign(p.CENTER, p.CENTER);
+         p.textSize(10);
+         let label = "S";
+         if (pu.type === PowerUpType.RAPID) label = "R";
+         if (pu.type === PowerUpType.HOMING) label = "H";
+         if (pu.type === PowerUpType.HEAL) label = "+";
+         p.text(label, pu.x, pu.y);
+         
+         // Collision Check
+         if (p.dist(player.pos.x, player.pos.y, pu.x, pu.y) < player.radius + pu.radius) {
+               if (pu.trap) {
+                   player.hp -= 30;
+                   setHealth(player.hp);
+                   createExplosion(player.pos.x, player.pos.y, COLORS.POWERUP_TRAP, 15);
+                   p.fill(255, 0, 0); p.textSize(20); p.text("TRAP!", player.pos.x, player.pos.y - 20);
+               } else {
+                   if (pu.type === PowerUpType.HEAL) {
+                       player.hp = Math.min(100, player.hp + 20);
+                       setHealth(player.hp);
+                   } else {
+                       if (player.weaponType === pu.type) {
+                           player.weaponLevel = Math.min(MAX_WEAPON_LEVEL, player.weaponLevel + 1);
+                           player.weaponTimer = 600; // Reset timer on stack
+                       } else {
+                           player.weaponType = pu.type;
+                           player.weaponLevel = 1;
+                           player.weaponTimer = 600; // 10s
+                       }
+                   }
+               }
+               powerUps.splice(i, 1);
+         } else if (pu.y > p.height + 20) {
+             powerUps.splice(i, 1);
+         }
+      }
+      
+      // Stasis Orbs
+      for (let i = stasisOrbs.length - 1; i >= 0; i--) {
+          let o = stasisOrbs[i];
+          if (globalTimeScale > 0) {
+              // Track player slowly
+              let angle = Math.atan2(player.pos.y - o.y, player.pos.x - o.x);
+              o.vx = Math.cos(angle) * 1.5;
+              o.vy = Math.sin(angle) * 1.5;
+              o.x += o.vx;
+              o.y += o.vy;
+          }
+          
+          p.noStroke();
+          p.fill(COLORS.BOSS_STASIS_ORB[0], COLORS.BOSS_STASIS_ORB[1], COLORS.BOSS_STASIS_ORB[2], 150);
+          p.circle(o.x, o.y, o.radius * 2);
+          p.fill(255);
+          p.circle(o.x, o.y, o.radius);
+          
+          if (p.dist(player.pos.x, player.pos.y, o.x, o.y) < o.radius + PLAYER_HITBOX && player.invulnerable <= 0 && player.shieldTimer <= 0) {
+              player.frozen = true;
+              player.freezeTimer = 90; // 1.5s
+              createExplosion(o.x, o.y, COLORS.BOSS_STASIS_ORB, 10);
+              stasisOrbs.splice(i, 1);
+          }
+      }
+      
+      // Sand Traps (Visuals)
+      for (let trap of sandTraps) {
+          p.noStroke();
+          p.fill(194, 178, 128, 100); // Sand color transparent
+          p.circle(trap.x, trap.y, trap.r * 2);
+          // Swirl effect
+          p.stroke(150, 130, 80, 150);
+          p.noFill();
+          p.arc(trap.x, trap.y, trap.r*1.5, trap.r*1.5, frame*0.05, frame*0.05 + p.PI);
       }
 
-      if (shaking) { p.pop(); }
+      // Particles
+      for (let i = particles.length - 1; i >= 0; i--) {
+        let part = particles[i];
+        part.x += part.vx;
+        part.y += part.vy;
+        part.life -= 0.05;
+        
+        if (part.isShockwave) {
+            p.noFill();
+            p.stroke(part.color);
+            p.strokeWeight(10 * part.life);
+            part.size += 20;
+            p.circle(part.x, part.y, part.size);
+        } else {
+            p.noStroke();
+            let c = part.color;
+            if (Array.isArray(c)) p.fill(c[0], c[1], c[2], part.life * 255);
+            else p.fill(c, part.life * 255);
+            p.circle(part.x, part.y, part.size);
+        }
 
+        if (part.life <= 0) particles.splice(i, 1);
+      }
+      
       // Time Stop Overlay
-      if (globalTimeScale === 0) {
-          p.filter(p.GRAY); // Grayscale effect
-          p.noStroke();
-          p.fill(COLORS.TIME_FREEZE_OVERLAY);
-          p.rect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+      if (boss.type === 'HOURGLASS' && boss.timeState === 'STOPPED') {
+          // Grayscale filter
+          p.filter(p.GRAY);
           
-          p.fill(255);
-          p.textAlign(p.CENTER, p.CENTER);
-          p.textSize(40);
-          p.text("TIME STOPPED", CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 50);
-
-          // Ticking Clock Visual
+          // Clock overlay
           p.push();
-          p.translate(CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 30);
+          p.translate(boss.pos.x, boss.pos.y);
           p.noFill();
           p.stroke(255);
-          p.strokeWeight(4);
-          p.circle(0, 0, 60);
+          p.strokeWeight(2);
+          p.circle(0, 0, 100);
+          // Ticking Hand
+          let tickRatio = 1 - (boss.timeAbilityTimer / 90);
+          let tickAngle = -p.PI/2 + (tickRatio * p.TWO_PI);
+          p.line(0, 0, Math.cos(tickAngle)*45, Math.sin(tickAngle)*45);
           
-          // Ticks
+          // Tick Marks
           for(let i=0; i<12; i++) {
-              let a = i * p.TWO_PI/12;
-              let x1 = Math.cos(a) * 25;
-              let y1 = Math.sin(a) * 25;
-              let x2 = Math.cos(a) * 30;
-              let y2 = Math.sin(a) * 30;
-              p.line(x1, y1, x2, y2);
+              let a = (p.TWO_PI/12)*i;
+              p.line(Math.cos(a)*40, Math.sin(a)*40, Math.cos(a)*48, Math.sin(a)*48);
           }
-
-          // Rotating Hand
-          let handAngle = p.map(boss.timeAbilityTimer, 90, 0, 0, p.TWO_PI * 2);
-          p.stroke(255, 255, 0);
-          p.strokeWeight(3);
-          p.line(0, 0, Math.cos(handAngle - p.PI/2) * 25, Math.sin(handAngle - p.PI/2) * 25);
-          
-          p.fill(255, 255, 0);
-          p.noStroke();
-          p.circle(0, 0, 6);
           p.pop();
       }
 
-      if (stageTransitionTimer > 0) {
-        stageTransitionTimer--;
-        p.push(); p.textAlign(p.CENTER, p.CENTER);
-        const alpha = p.map(Math.sin(frame * 0.5), -1, 1, 100, 255);
-        p.fill(255, 0, 50, alpha); p.textSize(60); p.textStyle(p.BOLD); p.stroke(0); p.strokeWeight(4); p.text(`STAGE ${currentStageIndex + 1}`, CANVAS_WIDTH/2, CANVAS_HEIGHT/2 - 20);
-        p.textSize(24); p.fill(255, 200, 200); p.noStroke(); p.text("THREAT LEVEL INCREASING", CANVAS_WIDTH/2, CANVAS_HEIGHT/2 + 40);
-        p.pop();
-      }
+      // --- 5. Collision Detection ---
+      if (gameState === GameState.PLAYING) {
+        // Player Hit by Enemy Bullets
+        if (player.invulnerable > 0) player.invulnerable--;
+        
+        // Draw Player
+        if (player.invulnerable % 10 < 5) {
+            p.fill(COLORS.PLAYER);
+            p.noStroke();
+            // Draw Ship
+            p.triangle(player.pos.x, player.pos.y - PLAYER_RADIUS*1.5, player.pos.x - PLAYER_RADIUS, player.pos.y + PLAYER_RADIUS, player.pos.x + PLAYER_RADIUS, player.pos.y + PLAYER_RADIUS);
+            
+            // Hitbox
+            p.fill(255, 0, 0);
+            p.circle(player.pos.x, player.pos.y, PLAYER_HITBOX * 2);
 
-      if (boss.hp <= 0 && boss.active) { setGameState(GameState.VICTORY); gameState = GameState.VICTORY; }
-      if (player.hp <= 0) { setGameState(GameState.GAME_OVER); gameState = GameState.GAME_OVER; }
+            // Shield Visual
+            if (player.shieldTimer > 0) {
+                p.push();
+                p.translate(player.pos.x, player.pos.y);
+                p.rotate(frame * 0.1);
+                p.noFill();
+                p.stroke(COLORS.PLAYER_SHIELD);
+                p.strokeWeight(2);
+                p.circle(0, 0, 50);
+                p.stroke(255, 255, 255, 100);
+                p.arc(0, 0, 55, 55, 0, p.PI/2);
+                p.arc(0, 0, 55, 55, p.PI, p.PI * 1.5);
+                p.pop();
+            }
+        }
+        
+        // Player Hit Check
+        for (let i = 0; i < enemyBullets.length; i++) {
+          let b = enemyBullets[i];
+          if (p.dist(player.pos.x, player.pos.y, b.pos.x, b.pos.y) < player.hitbox + b.r) {
+             
+             // Heal Bullet logic
+             if (b.shape === 'HEAL') {
+                 player.hp = Math.min(100, player.hp + 10);
+                 setHealth(player.hp);
+                 enemyBullets.splice(i, 1);
+                 continue;
+             }
+
+             if (player.invulnerable <= 0 && player.shieldTimer <= 0) {
+               player.hp -= 10;
+               setHealth(player.hp);
+               player.invulnerable = 60;
+               createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 10);
+               enemyBullets.splice(i, 1);
+               if (player.hp <= 0) {
+                 setGameState(GameState.GAME_OVER);
+                 createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 50);
+               }
+             } else {
+                 // Shield absorbs bullet
+                 enemyBullets.splice(i, 1);
+             }
+          }
+        }
+
+        // Check Boss Collision (Dash/Touch)
+        let bossDist = p.dist(player.pos.x, player.pos.y, boss.pos.x, boss.pos.y);
+        let touchDist = boss.radius + player.hitbox;
+        if (boss.type === 'SQUARE') touchDist = BOSS_SQUARE_SIZE/2 + player.hitbox;
+        
+        if (bossDist < touchDist && player.invulnerable <= 0 && player.shieldTimer <= 0) {
+             player.hp -= 20;
+             setHealth(player.hp);
+             player.invulnerable = 90;
+             createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 20);
+             // Bounce player back
+             let angle = Math.atan2(player.pos.y - boss.pos.y, player.pos.x - boss.pos.x);
+             player.pos.x += Math.cos(angle) * 50;
+             player.pos.y += Math.sin(angle) * 50;
+        }
+
+        // Player Bullets hitting Enemies/Boss
+        for (let i = player.bullets.length - 1; i >= 0; i--) {
+           let b = player.bullets[i];
+           let hit = false;
+
+           // Minions
+           for (let j = enemies.length - 1; j >= 0; j--) {
+              let e = enemies[j];
+              if (p.dist(b.pos.x, b.pos.y, e.pos.x, e.pos.y) < e.radius + 5) {
+                 e.hp -= b.dmg * player.damageMult;
+                 hit = true;
+                 if (e.hp <= 0) {
+                    enemies.splice(j, 1);
+                    score += e.scoreVal;
+                    setScore(score);
+                    createExplosion(e.pos.x, e.pos.y, COLORS.ENEMY, 5);
+                    if (p.random() < 0.5) spawnPowerUp(e.pos.x, e.pos.y); // 50% drop rate
+                 }
+                 break; 
+              }
+           }
+
+           if (!hit && boss.active) {
+              // Boss Collision
+              let d = p.dist(b.pos.x, b.pos.y, boss.pos.x, boss.pos.y);
+              let r = boss.radius;
+              if (boss.type === 'SQUARE') r = BOSS_SQUARE_SIZE/1.5;
+              if (boss.type === 'HEART' && currentStageIndex >= 4) r = BOSS_RADIUS * 1.5;
+              
+              if (d < r) {
+                 // Math Boss Invulnerability
+                 if (boss.type === 'MATH' && boss.mathState !== 'SPIN') {
+                     createExplosion(b.pos.x, b.pos.y, [200, 200, 200], 2); // Block effect
+                     hit = true;
+                     // No Damage
+                 } else {
+                     hit = true;
+                     // Shield Mechanic (Heart Boss Stage 5)
+                     if (boss.shield > 0) {
+                         boss.shield -= b.dmg * player.damageMult;
+                         createExplosion(b.pos.x, b.pos.y, COLORS.BOSS_SHIELD, 2);
+                     } else {
+                         let prevHp = boss.hp;
+                         boss.hp -= b.dmg * player.damageMult;
+                         setBossHealth((boss.hp / BOSS_MAX_HP) * 100);
+                         createExplosion(b.pos.x, b.pos.y, COLORS[`BOSS_${boss.type}`], 2);
+                         
+                         // 5% HP Drop Mechanic
+                         while (boss.hp < boss.nextPowerUpHp) {
+                             spawnPowerUp(boss.pos.x, boss.pos.y);
+                             boss.nextPowerUpHp -= (BOSS_MAX_HP * 0.05);
+                         }
+                     }
+
+                     if (boss.hp <= 0) {
+                        setGameState(GameState.VICTORY);
+                        createExplosion(boss.pos.x, boss.pos.y, COLORS[`BOSS_${boss.type}`], 100);
+                        boss.active = false;
+                     }
+                 }
+              }
+           }
+           if (hit) player.bullets.splice(i, 1);
+        }
+      }
+      
+      // Stage Text
+      if (stageTransitionTimer > 0) {
+          stageTransitionTimer--;
+          p.textAlign(p.CENTER, p.CENTER);
+          p.textSize(40);
+          p.fill(255, 0, 100, stageTransitionTimer * 2);
+          p.text(`WARNING: LEVEL ${currentStageIndex + 1}`, p.width/2, p.height/2 - 50);
+          p.textSize(20);
+          p.text("THREAT INCREASING", p.width/2, p.height/2);
+      }
     };
 
-    p.resetGame = resetGame;
     p.startGame = (bossType) => {
-      resetGame(bossType);
-      gameState = GameState.PLAYING;
-      setGameState(GameState.PLAYING);
+        resetGame(bossType);
+        gameState = GameState.PLAYING;
     };
   };
 };

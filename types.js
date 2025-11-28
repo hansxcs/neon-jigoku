@@ -6,16 +6,16 @@ export const GameState = {
   GAME_OVER: 3
 };
 
-export const PowerUpType = {
-  SPREAD: 0,
-  RAPID: 1,
-  HOMING: 2,
-  HEAL: 3
-};
-
 export const WeaponType = {
   DEFAULT: 0,
   SPREAD: 1,
   RAPID: 2,
   HOMING: 3
+};
+
+export const PowerUpType = {
+  SPREAD: 1, // Matches WeaponType.SPREAD
+  RAPID: 2,  // Matches WeaponType.RAPID
+  HOMING: 3, // Matches WeaponType.HOMING
+  HEAL: 4
 };

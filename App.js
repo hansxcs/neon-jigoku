@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef } from 'react';
 import htm from 'htm';
 import GameCanvas from './components/GameCanvas.js';
@@ -52,13 +53,6 @@ const App = () => {
   return html`
     <div className="fixed inset-0 w-full h-full bg-black flex flex-col items-center justify-center font-mono text-white overflow-hidden selection:bg-cyan-500 selection:text-black touch-none select-none">
       
-      <!-- Portrait Mode Warning (Visible on small screens in portrait) -->
-      <div className="md:hidden fixed inset-0 bg-black z-50 flex flex-col items-center justify-center text-center p-8 landscape:hidden">
-          <div className="text-4xl text-cyan-500 mb-4">↻</div>
-          <h2 className="text-xl font-bold text-white mb-2">ROTATE DEVICE</h2>
-          <p className="text-gray-400 text-sm">Please play in landscape mode.</p>
-      </div>
-
       <!-- HUD -->
       <div className="absolute top-1 w-full max-w-[800px] flex justify-between px-2 z-10 pointer-events-none">
         <div className="flex flex-col gap-0.5 md:gap-1">
@@ -108,8 +102,8 @@ const App = () => {
         </div>
       </div>
 
-      <!-- Game Canvas Wrapper -->
-      <div className="relative z-0 w-full h-full flex items-center justify-center p-2 md:p-4">
+      <!-- Game Canvas Wrapper - Removed padding on mobile to allow full screen -->
+      <div className="relative z-0 w-full h-full flex items-center justify-center p-0 md:p-4">
         <${GameCanvas} 
           setScore=${setScore} 
           setHealth=${setHealth} 
@@ -185,7 +179,7 @@ const App = () => {
             <div className="w-full mb-3 flex flex-col items-center gap-1">
               <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Select Target</span>
               <div className="flex gap-1.5 flex-wrap justify-center">
-                ${['RANDOM', 'CIRCLE', 'SQUARE', 'TRIANGLE', 'HEART', 'OVAL', 'HEXAGON', 'HOURGLASS'].map(boss => html`
+                ${['RANDOM', 'CIRCLE', 'SQUARE', 'TRIANGLE', 'HEART', 'OVAL', 'HEXAGON', 'HOURGLASS', 'MATH'].map(boss => html`
                     <button key=${boss} onClick=${() => setSelectedBoss(boss)} className=${`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${selectedBoss === boss ? 'bg-cyan-900 border-cyan-400 text-white' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>
                         ${boss}
                     </button>

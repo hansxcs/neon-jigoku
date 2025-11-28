@@ -16,6 +16,7 @@ export const BOSS_SQUARE_SIZE = 60;
 export const BOSS_TRIANGLE_SIZE = 50;
 export const BOSS_HEXAGON_SIZE = 45;
 export const BOSS_HOURGLASS_SIZE = 50;
+export const BOSS_MATH_SIZE = 50;
 export const BOSS_MAX_HP = 5000;
 
 export const BULLET_SPEED = 7;
@@ -36,6 +37,7 @@ export const COLORS = {
   BOSS_OVAL: [150, 0, 255], // Neon Purple
   BOSS_HEXAGON: [0, 255, 255], // Electric Cyan
   BOSS_HOURGLASS: [218, 165, 32], // Golden Rod
+  BOSS_MATH: [200, 200, 200], // Metallic White
   BOSS_GHOST: [218, 165, 32, 100], // Transparent Gold for Echo
   BOSS_SHADOW: [100, 100, 100, 150], // Dark Shadow Clone
   
@@ -49,6 +51,11 @@ export const COLORS = {
   BOSS_BULLET_HEXAGON: [200, 255, 255],
   BOSS_BULLET_KNIFE: [192, 192, 192], // Silver
   BOSS_BULLET_SAND: [238, 232, 170], // Pale Goldenrod
+  BOSS_BULLET_MATH: [50, 50, 255], // Math Blue
+  BOSS_BULLET_MATH_HEAL: [0, 255, 0], // Green Heal
+  BOSS_BULLET_MATRIX: [0, 255, 70], // Matrix Green
+  BOSS_BULLET_BINARY: [0, 255, 100], // Bright Matrix Green
+  BOSS_BULLET_GEOMETRY: [255, 100, 50], // Geometry Orange
   
   BOSS_LASER: [50, 255, 200],
   BOSS_SHIELD: [50, 150, 255], // Blue Shield

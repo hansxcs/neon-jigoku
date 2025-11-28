@@ -1,5 +1,9 @@
 
 
+
+
+
+
 export const Patterns = {
   // 1. Simple aimed shot
   aimed: (p, origin, target, spawn, speed) => {
@@ -261,6 +265,94 @@ export const Patterns = {
       const x = p.random(width);
       for(let i=0; i<10; i++) {
           spawn(x + p.random(-10, 10), height, p.random(-0.1, 0.1), -1, speed * p.random(1.0, 1.5), [238, 232, 170], 'CIRCLE');
+      }
+  },
+
+  // --- MATH BOSS PATTERNS ---
+
+  // 24. Math Plus (Direct Aimed)
+  mathPlus: (p, origin, target, count, spawn, speed, accelerating = false) => {
+      for(let i=0; i<count; i++) {
+          setTimeout(() => {
+              const angle = Math.atan2(target.y - origin.y, target.x - origin.x) + p.random(-0.1, 0.1);
+              spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), speed, [50, 50, 255], 'CIRCLE', 0, false, accelerating);
+          }, i * 50); // Stagger fire
+      }
+  },
+
+  // 25. Math Minus (Side Attack)
+  mathSide: (p, width, height, yPos, spawn, speed, isHeal) => {
+      const color = isHeal ? [0, 255, 0] : [255, 50, 50];
+      const type = isHeal ? 'HEAL' : 'CIRCLE';
+      // Left Side
+      spawn(0, yPos, 1, p.random(-0.2, 0.2), speed, color, type);
+      // Right Side
+      spawn(width, yPos, -1, p.random(-0.2, 0.2), speed, color, type);
+  },
+
+  // 26. Math Divide (Fractal Cluster Shot)
+  mathDiv: (p, origin, count, spawn, speed) => {
+      // Spawn large "Mother" clusters that split into 4 pieces
+      for(let i=0; i<count; i++) {
+          const angle = p.random(p.TWO_PI);
+          // splitGen: 2 means it splits twice (Parent -> 4 Children -> 16 Grandchildren)
+          spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), speed * 0.4, [100, 200, 255], 'CIRCLE', 0, true);
+      }
+  },
+  
+  // 27. Math Power Spiral (Exponential Acceleration)
+  mathPowerSpiral: (p, origin, count, spawn, baseSpeed) => {
+      // Count is based on power result (e.g., 3^3 = 27, 4^3 = 64)
+      const loops = 4; // Number of spiral arms
+      for(let i=0; i<count; i++) {
+          const t = i / count;
+          const angle = t * p.TWO_PI * loops;
+          // Spawn extremely slow initially
+          spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), 0.5, [255, 100, 50], 'GEOMETRY', 0, false, true, 'TRIANGLE');
+      }
+  },
+
+  // 28. Matrix Rain (Digital Rain)
+  matrixRain: (p, width, count, spawn, speed) => {
+      for(let i=0; i<count; i++) {
+          const x = p.random(width);
+          // Falling rectangles or Binary numbers
+          const isZero = p.random() > 0.5;
+          const type = 'BINARY'; 
+          const color = [0, 255, 70];
+          // Determine physics in sketch based on 'isZero' param passed via color or separate logic?
+          // We'll treat all as BINARY type in sketch, sketch randomizes 0 or 1
+          spawn(x, -50, 0, 1, speed * p.random(1.5, 3.0), color, 'BINARY');
+      }
+  },
+
+  // 29. Golden Spiral (Fibonacci)
+  goldenSpiral: (p, origin, frame, spawn, speed) => {
+      // Golden Angle ~ 137.5 degrees ~ 2.39996 radians
+      const goldenAngle = 2.39996;
+      // Fire multiple bullets per frame to create the dense pattern
+      const burst = 2;
+      for (let i = 0; i < burst; i++) {
+          // Use frame count as index for spiral
+          const n = frame * burst + i;
+          const angle = n * goldenAngle;
+          // We fire OUTWARD from the boss center at this angle
+          spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), speed * 0.8, [255, 215, 0], 'CIRCLE');
+      }
+  },
+  
+  // 30. Geometry Barrage (Shapes)
+  geometryBarrage: (p, origin, target, count, spawn, speed) => {
+      for(let i=0; i<count; i++) {
+          const type = p.random(['TRIANGLE', 'SQUARE', 'PENTAGON']);
+          const angle = p.random(p.TWO_PI);
+          let s = speed;
+          let col = [255, 100, 50];
+          
+          if (type === 'TRIANGLE') s = speed * 1.5;
+          if (type === 'SQUARE') s = speed * 0.5;
+          
+          spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), s, col, 'GEOMETRY', 0, false, false, type);
       }
   }
 

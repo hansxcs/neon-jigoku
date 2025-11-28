@@ -11,10 +11,27 @@ const GameCanvas = ({ setScore, setHealth, setBossHealth, setGameState, setStage
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Create the p5 instance
-    const sketch = createSketch(setScore, setHealth, setBossHealth, setGameState, setStage, setWeaponInfo, triggerShieldRef, setPlayerStatus, bulletSpeedRef);
+    // Detect if mobile (simple width check or user agent if needed, width is usually sufficient for responsive layout)
+    const isMobile = window.innerWidth < 768; 
+    
+    // On mobile, use exact window dimensions to fill the screen.
+    // On desktop, stick to the fixed arcade resolution.
+    const targetW = isMobile ? window.innerWidth : 800;
+    const targetH = isMobile ? window.innerHeight : 600;
+
+    // Create the p5 instance with dynamic dimensions
+    const sketch = createSketch(
+        setScore, setHealth, setBossHealth, setGameState, setStage, setWeaponInfo, 
+        triggerShieldRef, setPlayerStatus, bulletSpeedRef, 
+        targetW, targetH
+    );
     const myP5 = new p5(sketch, containerRef.current);
     p5Instance.current = myP5;
+
+    // Adjust container Aspect Ratio dynamically only for desktop
+    if (!isMobile) {
+        containerRef.current.style.aspectRatio = `${targetW}/${targetH}`;
+    }
 
     return () => {
       myP5.remove();
@@ -28,14 +45,20 @@ const GameCanvas = ({ setScore, setHealth, setBossHealth, setGameState, setStage
      }
   }, [gameState, selectedBoss]);
 
+  // Dynamic Border/Style classes
+  // Mobile: No border, full size. Desktop: Border, rounded.
+  const isMobile = window.innerWidth < 768;
+  const containerClasses = isMobile 
+    ? "w-full h-full bg-black overflow-hidden"
+    : "w-full border-4 border-cyan-500 rounded-lg shadow-[0_0_20px_rgba(0,255,255,0.5)] overflow-hidden bg-black";
 
   return React.createElement('div', {
     ref: containerRef,
-    className: "w-full border-2 md:border-4 border-cyan-500 rounded-lg shadow-[0_0_20px_rgba(0,255,255,0.5)] overflow-hidden bg-black",
+    className: containerClasses,
     style: { 
-        aspectRatio: "800/600",
-        maxHeight: "85vh", // Ensure it fits vertically on landscape phones
-        maxWidth: "800px" // Ensure it doesn't get too wide on large screens
+        width: "100%", 
+        height: "100%",
+        display: "block"
     } 
   });
 };
