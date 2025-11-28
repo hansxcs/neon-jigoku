@@ -1,0 +1,5 @@
+{
+  "name": "Neon Bullet Hell",
+  "description": "A high-octane bullet hell boss rush game built with p5.js and React. Survive 5 intense stages of mathematical bullet patterns, upgrade your firepower, and defeat the boss.",
+  "requestFramePermissions": []
+}
