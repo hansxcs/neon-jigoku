@@ -1,7 +1,5 @@
 
 
-
-
 export const Patterns = {
   // 1. Simple aimed shot
   aimed: (p, origin, target, spawn, speed) => {
@@ -98,16 +96,13 @@ export const Patterns = {
        const angle = rotation + (p.TWO_PI / 4) * i;
        const cornerX = origin.x + Math.cos(angle) * size;
        const cornerY = origin.y + Math.sin(angle) * size;
-       // Shoot outward perpendicular to edge? Or just spiral? Let's do spiral.
        spawn(cornerX, cornerY, Math.cos(angle), Math.sin(angle), speed, [255, 255, 100]);
     }
   },
 
   // 12. Rapid Stream (Targeted laser-like stream)
   rapidStream: (p, origin, target, spawn, speed) => {
-     // High accuracy, high speed
      const angle = Math.atan2(target.y - origin.y, target.x - origin.x);
-     // Add slight jitter
      const jitter = p.random(-0.1, 0.1);
      spawn(origin.x, origin.y, Math.cos(angle + jitter), Math.sin(angle + jitter), speed * 1.5, [255, 150, 0]);
   },
@@ -116,7 +111,6 @@ export const Patterns = {
   wallDown: (p, width, spawn, speed) => {
      const gap = 40;
      for(let x = 20; x < width; x += gap) {
-         // 20% chance to skip a spot (make a hole to dodge)
          if (p.random() > 0.2) {
              spawn(x, 0, 0, 1, speed * 0.6, [100, 255, 200]);
          }
@@ -125,12 +119,9 @@ export const Patterns = {
 
   // --- HEART BOSS PATTERNS ---
 
-  // 14. Heart Spread (Bullets form a heart shape)
+  // 14. Heart Spread
   heartSpread: (p, origin, frame, spawn, speed) => {
-    // Parametric heart equation:
-    // x = 16sin^3(t)
-    // y = 13cos(t) - 5cos(2t) - 2cos(3t) - cos(4t)
-    const points = 45; // Increased density
+    const points = 45; 
     const rotation = frame * 0.03; 
 
     // Layer 1: Outer Fast Layer
@@ -149,14 +140,13 @@ export const Patterns = {
        spawn(origin.x, origin.y, dirX, dirY, speed, [255, 100, 180]);
     }
 
-    // Layer 2: Inner Slow Layer (creates pulse effect)
-    if (frame % 2 === 0) { // Slight staggering
+    // Layer 2: Inner Slow Layer
+    if (frame % 2 === 0) { 
         for (let i = 0; i < points; i++) {
            const t = p.map(i, 0, points, 0, p.TWO_PI);
            const hx = 16 * Math.pow(Math.sin(t), 3);
            const hy = 13 * Math.cos(t) - 5 * Math.cos(2*t) - 2 * Math.cos(3*t) - Math.cos(4*t);
            
-           // Rotate slightly differently
            const rotX = hx * Math.cos(rotation + 0.5) - hy * Math.sin(rotation + 0.5);
            const rotY = hx * Math.sin(rotation + 0.5) + hy * Math.cos(rotation + 0.5);
 
@@ -169,10 +159,9 @@ export const Patterns = {
     }
   },
 
-  // 15. Panty Shot (Inverted Triangle Spread)
+  // 15. Panty Shot
   pantyShot: (p, origin, target, spawn, speed) => {
      const angle = Math.atan2(target.y - origin.y, target.x - origin.x);
-     // Fire 5 bullets in a wide spread
      const count = 5;
      for(let i=0; i<count; i++) {
         const offset = p.map(i, 0, count-1, -0.6, 0.6);
@@ -180,20 +169,27 @@ export const Patterns = {
      }
   },
 
-  // 16. Magazine Stream (Rectangular bullets)
+  // 16. Magazine Stream
   magazineStream: (p, origin, frame, spawn, speed) => {
      const angle = frame * 0.1;
      spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), speed, [255, 255, 255], 'RECT');
      spawn(origin.x, origin.y, Math.cos(angle + p.PI), Math.sin(angle + p.PI), speed, [255, 255, 255], 'RECT');
   },
 
+  magazineCross: (p, origin, frame, spawn, speed) => {
+     const angle = frame * 0.08; 
+     for(let i=0; i<4; i++) {
+         const a = angle + (p.TWO_PI / 4) * i;
+         spawn(origin.x, origin.y, Math.cos(a), Math.sin(a), speed, [255, 255, 255], 'RECT');
+     }
+  },
+
   // --- OVAL BOSS PATTERNS ---
 
-  // 17. Bounce Spread (Bullets marked to bounce)
+  // 17. Bounce Spread
   bounceSpread: (p, origin, target, count, spawn, speed, bounces) => {
     const baseAngle = Math.atan2(target.y - origin.y, target.x - origin.x);
     for (let i = 0; i < count; i++) {
-        // Wide spread
         const offset = p.map(i, 0, count - 1, -1.0, 1.0);
         const angle = baseAngle + offset;
         spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), speed, [200, 100, 255], 'CIRCLE', bounces);
@@ -202,15 +198,70 @@ export const Patterns = {
 
   // --- HEXAGON BOSS PATTERNS ---
   
-  // 18. Hexagon Spin (Fire from 6 vertices)
+  // 18. Hexagon Spin
   hexagonSpin: (p, origin, angle, size, spawn, speed) => {
      for(let i=0; i<6; i++) {
          const vAngle = angle + (p.TWO_PI / 6) * i;
-         // Vertex position
          const vx = origin.x + Math.cos(vAngle) * size;
          const vy = origin.y + Math.sin(vAngle) * size;
-         // Fire tangent to rotation
          spawn(vx, vy, Math.cos(vAngle), Math.sin(vAngle), speed, [0, 255, 255], 'CIRCLE');
      }
+  },
+
+  // --- HOURGLASS BOSS PATTERNS ---
+  
+  // 19. Hourglass Splash
+  hourglassSplash: (p, origin, frame, spawn, speed) => {
+      // Fire in X shape
+      const angles = [
+          Math.sin(frame * 0.1),
+          Math.PI + Math.sin(frame * 0.1),
+          Math.PI/2 + Math.cos(frame * 0.1),
+          -Math.PI/2 + Math.cos(frame * 0.1)
+      ];
+      angles.forEach(a => {
+           spawn(origin.x, origin.y, Math.cos(a), Math.sin(a), speed, [218, 165, 32], 'CIRCLE');
+      });
+  },
+
+  // 20. Hourglass Spiral (Double Helix-ish)
+  hourglassSpiral: (p, origin, frame, spawn, speed) => {
+      const a1 = frame * 0.2;
+      const a2 = -frame * 0.2 + p.PI;
+      spawn(origin.x, origin.y, Math.cos(a1), Math.sin(a1), speed, [255, 223, 0], 'CIRCLE');
+      spawn(origin.x, origin.y, Math.cos(a2), Math.sin(a2), speed, [255, 223, 0], 'CIRCLE');
+  },
+  
+  // 21. Sandstorm (Chaotic Particles)
+  sandstorm: (p, origin, width, spawn, speed) => {
+      const count = 5;
+      for(let i=0; i<count; i++) {
+          const x = p.random(origin.x - 100, origin.x + 100);
+          const y = origin.y + p.random(-20, 20);
+          const angle = p.PI/2 + p.random(-0.5, 0.5); // Downwards with spread
+          const s = speed * p.random(0.5, 1.5);
+          spawn(x, y, Math.cos(angle), Math.sin(angle), s, [238, 232, 170], 'CIRCLE');
+      }
+  },
+
+  // 22. Timeline Collapse (Walls closing in)
+  timelineCollapse: (p, width, height, spawn, speed) => {
+      // Left Wall
+      for(let y=0; y<height; y+=50) {
+          spawn(0, y, 1, 0, speed * 0.5, [184, 134, 11], 'CIRCLE');
+      }
+      // Right Wall
+      for(let y=0; y<height; y+=50) {
+          spawn(width, y, -1, 0, speed * 0.5, [184, 134, 11], 'CIRCLE');
+      }
+  },
+  
+  // 23. Sand Geyser (Upward streams)
+  sandGeyser: (p, width, height, spawn, speed) => {
+      const x = p.random(width);
+      for(let i=0; i<10; i++) {
+          spawn(x + p.random(-10, 10), height, p.random(-0.1, 0.1), -1, speed * p.random(1.0, 1.5), [238, 232, 170], 'CIRCLE');
+      }
   }
+
 };
