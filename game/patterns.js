@@ -1,9 +1,5 @@
 
 
-
-
-
-
 export const Patterns = {
   // 1. Simple aimed shot
   aimed: (p, origin, target, spawn, speed) => {
@@ -353,6 +349,59 @@ export const Patterns = {
           if (type === 'SQUARE') s = speed * 0.5;
           
           spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), s, col, 'GEOMETRY', 0, false, false, type);
+      }
+  },
+  
+  // 31. Math Tangent (Vertical Asymptote Walls)
+  mathTangent: (p, width, height, count, spawn, speed) => {
+      // Creates rapidly moving vertical streams
+      for(let i=0; i<count; i++) {
+          const x = p.random(width);
+          // Rapid fire column
+          for(let y= -100; y < 0; y+=20) {
+               spawn(x, y, 0, 1, speed * 2.5, [50, 255, 200], 'RECT');
+          }
+      }
+  },
+  
+  // 32. Math Riemann (Integral Area Barrage)
+  mathRiemann: (p, width, height, frame, spawn, speed) => {
+      // Calculates y = sin(x) curve and fills area under it
+      if (frame % 5 === 0) {
+           const curveOffset = frame * 0.05;
+           for(let x=20; x<width; x+=40) {
+               // Map Sine wave to screen height
+               const sinVal = Math.sin(x * 0.01 + curveOffset);
+               const curveY = p.map(sinVal, -1, 1, height, height - 250);
+               
+               // Spawn a bullet at bottom rising up, but only spawn if random chance
+               if (p.random() < 0.1) {
+                   spawn(x, height, 0, -1, speed * 0.5, [100, 100, 255], 'RECT');
+               }
+           }
+      }
+  },
+
+  // 33. Math Modulo (Grid Stripes)
+  mathModulo: (p, width, height, modulus, spawn, speed) => {
+      // Creates stripes of bullets based on x % mod
+      // We spawn a row at the top
+      const stripeWidth = modulus / 2; 
+      for(let x=0; x<width; x+=10) {
+          // If x falls into the "remainder" zone of the modulus
+          if (x % modulus > stripeWidth) {
+              spawn(x, -20, 0, 1, speed, [180, 50, 255], 'CIRCLE');
+          }
+      }
+  },
+
+  // 34. Math Factorial (Radial Explosion)
+  mathFactorial: (p, origin, count, spawn, speed) => {
+      // Massive burst
+      for(let i=0; i<count; i++) {
+          const angle = p.random(p.TWO_PI);
+          const s = speed * p.random(0.5, 2.0); // Variable speed for chaotic expansion
+          spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), s, [255, 69, 0], 'CIRCLE', 0, false, true);
       }
   }
 

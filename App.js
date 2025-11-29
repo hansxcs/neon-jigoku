@@ -1,5 +1,4 @@
 
-
 import React, { useState, useRef } from 'react';
 import htm from 'htm';
 import GameCanvas from './components/GameCanvas.js';
@@ -173,6 +172,9 @@ const App = () => {
                     >
                         DEF
                     </button>
+                </div>
+                <div className="text-[9px] text-center mt-1 font-bold ${bulletSpeed > 1 ? 'text-green-400' : bulletSpeed < 1 ? 'text-red-400' : 'text-gray-500'}">
+                    ${bulletSpeed > 1 ? '⚠️ HIGHER SPEED = WEAK BULLETS' : bulletSpeed < 1 ? '⚠️ LOWER SPEED = DEADLY BULLETS' : 'NORMAL DAMAGE'}
                 </div>
             </div>
 

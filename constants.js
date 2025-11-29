@@ -18,9 +18,11 @@ export const BOSS_HEXAGON_SIZE = 45;
 export const BOSS_HOURGLASS_SIZE = 50;
 export const BOSS_MATH_SIZE = 50;
 export const BOSS_MAX_HP = 5000;
+export const BOSS_SCORE_REWARD = 50000;
+export const SCORE_PER_HIT = 10;
 
 export const BULLET_SPEED = 7;
-export const ENEMY_BULLET_BASE_SPEED = 4;
+export const ENEMY_BULLET_BASE_SPEED = 2.5;
 
 export const SHIELD_DURATION = 300; // 5 seconds at 60fps
 export const MAX_SHIELD_CHARGES = 3;
@@ -56,6 +58,10 @@ export const COLORS = {
   BOSS_BULLET_MATRIX: [0, 255, 70], // Matrix Green
   BOSS_BULLET_BINARY: [0, 255, 100], // Bright Matrix Green
   BOSS_BULLET_GEOMETRY: [255, 100, 50], // Geometry Orange
+  BOSS_BULLET_RIEMANN: [100, 100, 255], // Integral Blue
+  BOSS_BULLET_MODULO: [180, 50, 255], // Modulo Purple
+  BOSS_BULLET_FACTORIAL: [255, 69, 0], // Factorial Red-Orange
+  BOSS_MATH_GRID: [50, 50, 80, 50], // Faint Grid
   
   BOSS_LASER: [50, 255, 200],
   BOSS_SHIELD: [50, 150, 255], // Blue Shield
@@ -65,6 +71,8 @@ export const COLORS = {
   BOSS_STASIS_ORB: [100, 255, 255], // Cyan/White Glow
   BOSS_SAND_WALL: [184, 134, 11], // Dark Goldenrod
   BOSS_FATE_BEAM: [255, 215, 0], // Gold Laser
+  BOSS_INEQUALITY: [255, 0, 0, 100], // Red Danger Zone
+  BOSS_INEQUALITY_WARN: [255, 200, 0, 100], // Yellow Warning Zone
 
   ENEMY: [255, 80, 80], // Light Red
   ENEMY_BULLET: [255, 150, 150],

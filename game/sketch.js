@@ -1,6 +1,7 @@
 
+
 import p5 from 'p5';
-import { COLORS, PLAYER_SPEED, PLAYER_RADIUS, BOSS_RADIUS, BOSS_SQUARE_SIZE, BOSS_TRIANGLE_SIZE, BOSS_HEXAGON_SIZE, BOSS_HOURGLASS_SIZE, BOSS_MATH_SIZE, BOSS_MAX_HP, BULLET_SPEED, PLAYER_HITBOX, ENEMY_BULLET_BASE_SPEED, MAX_WEAPON_LEVEL, BASE_BULLET_SPEED_SCALE, OVAL_BOSS_MOVE_SPEED, SHIELD_DURATION, MAX_SHIELD_CHARGES } from '../constants.js';
+import { COLORS, PLAYER_SPEED, PLAYER_RADIUS, BOSS_RADIUS, BOSS_SQUARE_SIZE, BOSS_TRIANGLE_SIZE, BOSS_HEXAGON_SIZE, BOSS_HOURGLASS_SIZE, BOSS_MATH_SIZE, BOSS_MAX_HP, BULLET_SPEED, PLAYER_HITBOX, ENEMY_BULLET_BASE_SPEED, MAX_WEAPON_LEVEL, BASE_BULLET_SPEED_SCALE, OVAL_BOSS_MOVE_SPEED, SHIELD_DURATION, MAX_SHIELD_CHARGES, BOSS_SCORE_REWARD, SCORE_PER_HIT } from '../constants.js';
 import { GameState, PowerUpType, WeaponType } from '../types.js';
 import { Patterns } from './patterns.js';
 
@@ -110,6 +111,7 @@ export const createSketch = (
     let blockers = []; 
     let sandTraps = [];
     let stasisOrbs = []; // Replaces Time Bombs
+    let mathParticles = []; // Floating math symbols
     
     // Systems
     let frame = 0;
@@ -139,6 +141,24 @@ export const createSketch = (
               }
           };
       }
+    };
+
+    p.windowResized = () => {
+        const isMobile = window.innerWidth < 768;
+        const newW = isMobile ? window.innerWidth : 800;
+        const newH = isMobile ? window.innerHeight : 600;
+        
+        p.resizeCanvas(newW, newH);
+        
+        // Re-init stars to cover new area uniformly without gaps
+        stars = [];
+        for(let i=0; i<100; i++) {
+            stars.push({
+              x: p.random(p.width), 
+              y: p.random(p.height), 
+              z: p.random(0.5, 3)
+            });
+        }
     };
 
     p.touchMoved = () => {
@@ -214,6 +234,7 @@ export const createSketch = (
       blockers = []; 
       sandTraps = [];
       stasisOrbs = [];
+      mathParticles = [];
       score = 0;
       frame = 0;
 
@@ -236,6 +257,9 @@ export const createSketch = (
 
     // --- Helpers ---
     const spawnEnemyBullet = (x, y, vx, vy, speed, color, shape = 'CIRCLE', bounces = 0, canSplit = false, accelerating = false, subType = null) => {
+      // Safety Check: Cap bullets to prevent crash
+      if (enemyBullets.length > 500) return;
+
       let b = {
         pos: p.createVector(x, y),
         vel: p.createVector(vx * speed, vy * speed),
@@ -287,11 +311,11 @@ export const createSketch = (
     };
 
     const spawnMinion = (forcedType = null, forcedX = null, forcedY = null, parent = null) => {
-      if (enemies.length >= 25) return; 
+      if (enemies.length >= 30) return; // Cap enemies to prevent crash
 
       const type = forcedType || (p.random() > 0.5 ? 'drone' : 'swooper');
-      const x = forcedX !== null ? forcedX : p.random(50, p.width - 50);
-      const y = forcedY !== null ? forcedY : -30;
+      const x = (forcedX !== null && !isNaN(forcedX)) ? forcedX : p.random(50, p.width - 50);
+      const y = (forcedY !== null && !isNaN(forcedY)) ? forcedY : -30;
       
       let hp = 30;
       let radius = 15;
@@ -302,6 +326,16 @@ export const createSketch = (
       if (type === 'orbiter') { hp = 60; radius = 10; }
       if (type === 'mini_boss') { hp = 500; radius = 30; scoreVal = 1000; }
       if (type === 'lust_orb') { hp = 1200; radius = 100; scoreVal = 2000; }
+
+      // Summoning Visual
+      particles.push({
+          x: x, y: y,
+          vx: 0, vy: 0,
+          life: 1.0,
+          color: COLORS.BOSS_TRIANGLE,
+          size: 5,
+          isShockwave: true // Reusing shockwave for rift ring
+      });
 
       enemies.push({
         pos: p.createVector(x, y),
@@ -315,6 +349,18 @@ export const createSketch = (
         parent: parent, 
         scoreVal: scoreVal
       });
+    };
+    
+    const spawnMathParticle = () => {
+        mathParticles.push({
+            x: p.random(p.width),
+            y: p.random(p.height),
+            vx: p.random(-0.5, 0.5),
+            vy: p.random(-0.5, 0.5),
+            life: 1.0,
+            text: p.random(['π', '∞', '∑', '∫', '√', '≠', '±', '∆', '%', '!']),
+            size: p.random(12, 24)
+        });
     };
 
     const spawnPowerUp = (x, y, guaranteedType) => {
@@ -366,9 +412,14 @@ export const createSketch = (
     };
     
     const lineCircleIntersect = (x1, y1, x2, y2, cx, cy, r) => {
+        // Validation to prevent crash on NaN
+        if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2) || isNaN(cx) || isNaN(cy)) return false;
+
         const dx = x2 - x1;
         const dy = y2 - y1;
         const lenSq = dx*dx + dy*dy;
+        if (lenSq === 0) return false;
+        
         const t = ((cx - x1) * dx + (cy - y1) * dy) / lenSq;
         const closestX = x1 + Math.max(0, Math.min(1, t)) * dx;
         const closestY = y1 + Math.max(0, Math.min(1, t)) * dy;
@@ -421,8 +472,38 @@ export const createSketch = (
         }
     };
 
+    const drawMathGrid = () => {
+        p.stroke(COLORS.BOSS_MATH_GRID);
+        p.strokeWeight(1);
+        const gridSize = 40;
+        // Vertical lines
+        for(let x = 0; x <= p.width; x += gridSize) {
+             p.line(x, 0, x, p.height);
+        }
+        // Force last line at edge
+        p.line(p.width, 0, p.width, p.height);
+
+        // Horizontal lines
+        for(let y = 0; y <= p.height; y += gridSize) {
+             p.line(0, y, p.width, y);
+        }
+        // Force last line at bottom
+        p.line(0, p.height, p.width, p.height);
+
+        // Axes
+        p.stroke(100, 100, 150, 100);
+        p.strokeWeight(2);
+        p.line(p.width/2, 0, p.width/2, p.height);
+        p.line(0, p.height/2, p.width, p.height/2);
+    };
+
     // --- Draw Loop ---
     p.draw = () => {
+      // --- GLOBAL BULLET SPEED SCALING ---
+      // Defined at top scope for access by helpers if needed, but primarily used in update
+      const userSpeedScale = bulletSpeedRef && bulletSpeedRef.current ? bulletSpeedRef.current : 1.0;
+      let baseSpeed = (ENEMY_BULLET_BASE_SPEED + (currentStageIndex * 0.5)) * BASE_BULLET_SPEED_SCALE * userSpeedScale;
+
       p.background(COLORS.BACKGROUND, 100);
 
       // Camera Shake
@@ -448,12 +529,33 @@ export const createSketch = (
         }
         p.circle(star.x, star.y, star.z);
       }
+      
+      // Draw Math Particles
+      for(let i=mathParticles.length-1; i>=0; i--) {
+          let mp = mathParticles[i];
+          mp.x += mp.vx;
+          mp.y += mp.vy;
+          mp.life -= 0.01;
+          p.textSize(mp.size);
+          p.fill(200, 200, 255, mp.life * 150);
+          p.text(mp.text, mp.x, mp.y);
+          if (mp.life <= 0) mathParticles.splice(i, 1);
+      }
+      
+      // Draw Math Grid if Math Boss
+      if (boss.type === 'MATH' && boss.active) {
+          drawMathGrid();
+          if (frame % 60 === 0 && mathParticles.length < 20) spawnMathParticle();
+      }
 
       if (gameState === GameState.MENU || gameState === GameState.GAME_OVER || gameState === GameState.VICTORY) {
         if (shaking) p.pop();
+        // Draw one last frame of entities in background (optional) or just return
         return;
       }
 
+      // --- UPDATE LOGIC (Physics, AI) ---
+      
       frame++;
       simTime += globalTimeScale; // Accumulated simulation time
       
@@ -526,6 +628,23 @@ export const createSketch = (
 
       player.pos.x = p.constrain(player.pos.x, PLAYER_RADIUS, p.width - PLAYER_RADIUS);
       player.pos.y = p.constrain(player.pos.y, PLAYER_RADIUS, p.height - PLAYER_RADIUS);
+      
+      // --- Render Blockers (Square Boss) ---
+      if (blockers.length > 0) {
+          p.noStroke();
+          p.fill(COLORS.BLOCKER);
+          p.rectMode(p.CENTER);
+          for (let b of blockers) {
+              p.rect(b.pos.x, b.pos.y, b.w, b.h);
+              // Glow border
+              p.stroke(255, 100);
+              p.strokeWeight(2);
+              p.noFill();
+              p.rect(b.pos.x, b.pos.y, b.w, b.h);
+              p.noStroke();
+              p.fill(COLORS.BLOCKER);
+          }
+      }
 
       // --- 2. Weapon & Shooting ---
       if (player.weaponTimer > 0) {
@@ -661,10 +780,6 @@ export const createSketch = (
                 }
             }
         }
-
-        // --- GLOBAL BULLET SPEED SCALING ---
-        const userSpeedScale = bulletSpeedRef && bulletSpeedRef.current ? bulletSpeedRef.current : 1.0;
-        let baseSpeed = (ENEMY_BULLET_BASE_SPEED + (currentStageIndex * 0.5)) * BASE_BULLET_SPEED_SCALE * userSpeedScale;
         
         // --- BOSS MOVEMENT & BEHAVIOR ---
         if (boss.type === 'CIRCLE') {
@@ -822,32 +937,44 @@ export const createSketch = (
                         }
                     }
                 }
+                
+                // PRISM PRISON (STAGE 4+) - Improved visual and functionality
+                if (currentStageIndex >= 3 && frame % 400 === 0) {
+                     const r = 300;
+                     for(let k=0; k<3; k++) {
+                         let a = k * (p.TWO_PI/3) + frame*0.01;
+                         let nx = player.pos.x + Math.cos(a)*r;
+                         let ny = player.pos.y + Math.sin(a)*r;
+                         spawnEnemyBullet(nx, ny, (player.pos.x - nx)*0.005, (player.pos.y - ny)*0.005, baseSpeed * 0.8, COLORS.BOSS_LASER, 'CIRCLE');
+                     }
+                }
             }
             if (stageTransitionTimer < 140 && boss.opacity > 200) {
                 if (frame % 30 === 0) Patterns.aimed(p, boss.pos, player.pos, spawnEnemyBullet, baseSpeed + 4); 
                 if (currentStageIndex >= 0) {
-                    if (boss.summonTimer % 100 === 0) { 
+                    if (boss.summonTimer % 60 === 0) { 
                         spawnMinion('drone', boss.pos.x + 50, boss.pos.y);
                         spawnMinion('drone', boss.pos.x - 50, boss.pos.y);
                         p.noFill(); p.stroke(255); p.circle(boss.pos.x, boss.pos.y, 100); 
                     }
                 }
                 if (currentStageIndex >= 1) {
-                    if (boss.summonTimer % 120 === 60) spawnMinion('swooper', boss.pos.x, boss.pos.y + 50); 
+                    if (boss.summonTimer % 90 === 45) spawnMinion('swooper', boss.pos.x, boss.pos.y + 50); 
                     if (frame % 40 === 0) Patterns.spread(p, boss.pos, player.pos, 3, p.PI/4, spawnEnemyBullet, baseSpeed);
                 }
                 if (currentStageIndex >= 2) {
-                     if (boss.summonTimer % 180 === 100) { 
+                     if (boss.summonTimer % 120 === 60) { 
                          for(let i=0; i<3; i++) spawnMinion('orbiter', boss.pos.x, boss.pos.y, boss);
                      }
                 }
                 if (currentStageIndex >= 3) {
                      const miniBossCount = enemies.filter(e => e.type === 'mini_boss').length;
-                     if (miniBossCount < 5 && boss.summonTimer % 150 === 0) spawnMinion('mini_boss', boss.pos.x, boss.pos.y); 
+                     // Only spawn if safe
+                     if (miniBossCount < 3 && boss.summonTimer % 150 === 0) spawnMinion('mini_boss', boss.pos.x, boss.pos.y); 
                 }
                 if (currentStageIndex >= 4) {
                      if (frame % 5 === 0) Patterns.flower(p, boss.pos, frame, 5, spawnEnemyBullet, baseSpeed); 
-                     if (boss.summonTimer % 45 === 0) spawnMinion(p.random(['drone', 'swooper'])); 
+                     if (boss.summonTimer % 40 === 0) spawnMinion(p.random(['drone', 'swooper'])); 
                 }
             }
 
@@ -1218,8 +1345,14 @@ export const createSketch = (
             }
         } else if (boss.type === 'MATH') {
             // Spin numbers
-            boss.pos.x = p.lerp(boss.pos.x, p.width / 2, 0.05);
-            boss.pos.y = p.lerp(boss.pos.y, 100, 0.05);
+            // Move in Figure-8 (Infinity Symbol)
+            if (boss.mathState === 'SPIN') {
+                 boss.pos.x = p.width / 2 + Math.cos(frame * 0.05) * 100;
+                 boss.pos.y = 150 + Math.sin(frame * 0.1) * 30; // 2x freq on Y makes it figure-8
+            } else {
+                 boss.pos.x = p.lerp(boss.pos.x, p.width / 2, 0.05);
+                 boss.pos.y = p.lerp(boss.pos.y, 100, 0.05);
+            }
             
             if (stageTransitionTimer < 140) {
                 switch(boss.mathState) {
@@ -1241,10 +1374,18 @@ export const createSketch = (
                         const ops = ['+'];
                         if (currentStageIndex >= 0) ops.push('-');
                         if (currentStageIndex >= 1) ops.push('/');
+                        if (currentStageIndex >= 1) ops.push('%'); // NEW: Modulo
                         if (currentStageIndex >= 2) ops.push('x'); // Stage 3: Matrix Rain
+                        if (currentStageIndex >= 2) ops.push('tan'); // Stage 3: Tangent Walls
                         if (currentStageIndex >= 3) ops.push('^'); // Stage 4: Geometry
-                        if (currentStageIndex >= 4) { // Stage 5: Golden Ratio
-                            if (p.random() < 0.6) ops.push('PHI'); // Use Phi more often
+                        if (currentStageIndex >= 3) ops.push('!'); // NEW: Factorial
+                        if (currentStageIndex >= 3) { // Stage 4+ Inequality
+                            if (p.random() < 0.3) ops.push('<');
+                            if (p.random() < 0.3) ops.push('>');
+                        }
+                        if (currentStageIndex >= 4) { // Stage 5
+                            if (p.random() < 0.6) ops.push('PHI'); 
+                            if (p.random() < 0.6) ops.push('∫'); // Integral
                         }
                         
                         boss.operator = p.random(ops);
@@ -1277,20 +1418,51 @@ export const createSketch = (
                              boss.operands[0] = Math.floor(p.random(2, 6)); // Increase base
                              boss.operands[1] = Math.floor(p.random(2, 4)); // Increase power
                              boss.mathResult = Math.min(150, Math.pow(boss.operands[0], boss.operands[1]));
+                        } else if (boss.operator === '%') { // MODULO
+                             boss.operands[1] = Math.floor(p.random(50, 150)); // Modulus width
+                             boss.operands[0] = "x";
+                             boss.mathResult = boss.operands[1];
+                        } else if (boss.operator === '!') { // FACTORIAL
+                             boss.operands[0] = Math.floor(p.random(3, 6)); // 3! to 5! (6 to 120)
+                             boss.operands[1] = 0;
+                             let res = 1; for(let i=1; i<=boss.operands[0]; i++) res *= i;
+                             boss.mathResult = res;
                         } else if (boss.operator === 'PHI') {
                              boss.mathResult = 150; // High count for spiral
                              boss.operands = [1, 1]; // Fib seed
+                        } else if (boss.operator === 'tan') {
+                             boss.mathResult = 20; // Number of asymptotes
+                             boss.operands = [90, 0];
+                        } else if (boss.operator === '∫') {
+                             boss.mathResult = 100; 
+                             boss.operands = [0, 1]; 
+                        } else if (boss.operator === '<' || boss.operator === '>') {
+                             // Inequality: x or y < value
+                             // operands[0] = value, operands[1] = axis (0:x, 1:y)
+                             boss.operands[1] = p.random() > 0.5 ? 0 : 1; 
+                             if (boss.operands[1] === 0) boss.operands[0] = Math.floor(p.random(p.width*0.3, p.width*0.7));
+                             else boss.operands[0] = Math.floor(p.random(p.height*0.3, p.height*0.7));
+                             boss.mathResult = "DANGER";
                         }
                         
-                        boss.displayNums = [...boss.operands];
-                        boss.mathTimer = 30; // Wait a bit showing result
+                        if (boss.operator !== '<' && boss.operator !== '>') {
+                            boss.displayNums = [...boss.operands];
+                        }
+
+                        // TIMER LOGIC FIX
+                        if (boss.operator === '<' || boss.operator === '>') {
+                            boss.mathTimer = 120; // Give 2 seconds for Warning Phase
+                        } else {
+                            boss.mathTimer = 30; // Wait a bit showing result then attack
+                        }
                         boss.mathState = 'ATTACK';
                         break;
                     case 'ATTACK':
                         boss.mathTimer--;
                         
-                        // Fire Logic
-                        if (boss.mathTimer === 20) {
+                        // Fire Logic (Standard attacks fire once after short delay)
+                        // Inequality fires continuously over duration
+                        if (boss.operator !== '<' && boss.operator !== '>' && boss.mathTimer === 20) {
                             if (boss.operator === '+') {
                                 // Addition: Direct aimed shots
                                 let count = Math.min(boss.mathResult, 50); 
@@ -1319,14 +1491,62 @@ export const createSketch = (
                             } else if (boss.operator === '^') {
                                 // Power: EXPONENTIAL SPIRAL (Accelerating bullets)
                                 Patterns.mathPowerSpiral(p, boss.pos, boss.mathResult, spawnEnemyBullet, baseSpeed);
-                            } else if (boss.operator === 'PHI') {
-                                // Golden Spiral
-                                // Handled in draw loop while state is ATTACK
+                            } else if (boss.operator === 'tan') {
+                                // Tangent: Vertical Asymptote Walls
+                                Patterns.mathTangent(p, p.width, p.height, 15, spawnEnemyBullet, baseSpeed);
+                            } else if (boss.operator === '%') {
+                                // Modulo: Stripes
+                                Patterns.mathModulo(p, p.width, p.height, boss.mathResult, spawnEnemyBullet, baseSpeed);
+                            } else if (boss.operator === '!') {
+                                // Factorial: Explosion
+                                Patterns.mathFactorial(p, boss.pos, boss.mathResult, spawnEnemyBullet, baseSpeed);
                             }
                         }
                         
                         if (boss.operator === 'PHI') {
                              Patterns.goldenSpiral(p, boss.pos, frame, spawnEnemyBullet, baseSpeed);
+                        } else if (boss.operator === '∫') {
+                             Patterns.mathRiemann(p, p.width, p.height, frame, spawnEnemyBullet, baseSpeed);
+                        } else if (boss.operator === '<' || boss.operator === '>') {
+                             // Inequality Zone
+                             const axis = boss.operands[1]; // 0:x, 1:y
+                             const val = boss.operands[0];
+                             let danger = false;
+                             let x, y, w, h;
+                             
+                             if (boss.operator === '<') {
+                                 // Danger is < val
+                                 if (axis === 0) { x=0; y=0; w=val; h=p.height; if(player.pos.x < val) danger=true; }
+                                 else { x=0; y=0; w=p.width; h=val; if(player.pos.y < val) danger=true; }
+                             } else {
+                                 // Danger is > val
+                                 if (axis === 0) { x=val; y=0; w=p.width-val; h=p.height; if(player.pos.x > val) danger=true; }
+                                 else { x=0; y=val; w=p.width; h=p.height-val; if(player.pos.y > val) danger=true; }
+                             }
+                             
+                             // WARNING PHASE (120 -> 60)
+                             if (boss.mathTimer > 60) {
+                                 if (frame % 20 < 10) {
+                                     p.noStroke();
+                                     p.fill(COLORS.BOSS_INEQUALITY_WARN);
+                                     p.rect(x, y, w, h);
+                                     p.fill(255); p.textSize(40); p.textAlign(p.CENTER, p.CENTER);
+                                     p.text("WARNING", x + w/2, y + h/2);
+                                 }
+                             } else {
+                                 // ACTIVE PHASE (60 -> 0)
+                                 p.noStroke();
+                                 p.fill(COLORS.BOSS_INEQUALITY);
+                                 p.rect(x, y, w, h);
+                                 p.fill(255); p.textSize(40); p.textAlign(p.CENTER, p.CENTER);
+                                 p.text("DANGER", x + w/2, y + h/2);
+                                 
+                                 if (danger && player.invulnerable <= 0 && player.shieldTimer <= 0) {
+                                     player.hp -= 2;
+                                     setHealth(player.hp);
+                                     createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 1);
+                                 }
+                             }
                         }
                         
                         if (boss.mathTimer <= 0) {
@@ -1441,7 +1661,7 @@ export const createSketch = (
                p.fill(255);
                p.noStroke();
                if (boss.mathState === 'SPIN') {
-                   p.text(p.random(['+', '-', '/', 'x', '^', 'Φ']), 0, 0);
+                   p.text(p.random(['+', '-', '/', 'x', '^', 'Φ', 'tan', '∫', '<', '>', '%', '!']), 0, 0);
                    p.textSize(15);
                    p.fill(0, 255, 0);
                    if (frame % 10 < 5) p.text("VULNERABLE", 0, 60);
@@ -1453,16 +1673,19 @@ export const createSketch = (
                // Floating Numbers
                p.textSize(30);
                p.fill(200, 200, 255);
-               p.text(boss.displayNums[0], -80 + Math.sin(frame * 0.1)*10, Math.cos(frame * 0.1)*10);
-               p.text(boss.displayNums[1], 80 + Math.sin(frame * 0.1 + p.PI)*10, Math.cos(frame * 0.1 + p.PI)*10);
+               if (boss.operator !== '<' && boss.operator !== '>') {
+                   p.text(boss.displayNums[0], -80 + Math.sin(frame * 0.1)*10, Math.cos(frame * 0.1)*10);
+                   p.text(boss.displayNums[1], 80 + Math.sin(frame * 0.1 + p.PI)*10, Math.cos(frame * 0.1 + p.PI)*10);
+               }
                
                // Result
                if (boss.mathState === 'ATTACK' || boss.mathState === 'RESOLVE') {
                    p.textSize(20);
                    p.fill(100, 255, 100);
                    let res = boss.mathResult;
-                   if (boss.operator === 'x' || boss.operator === '^') res = 'MAX'; // Simplified display
+                   if (boss.operator === 'x' || boss.operator === '^' || boss.operator === 'tan' || boss.operator === '∫') res = 'MAX'; 
                    if (boss.operator === 'PHI') res = 'GOLDEN';
+                   if (boss.operator === '<' || boss.operator === '>') res = 'ZONE';
                    p.text("= " + res, 0, -60);
                }
           }
@@ -1523,7 +1746,27 @@ export const createSketch = (
         // Draw
         p.fill(e.type === 'lust_orb' ? COLORS.ENEMY_LUST_ORB : (e.type === 'mini_boss' ? COLORS.ENEMY_MINI_BOSS : COLORS.ENEMY));
         p.noStroke();
-        p.circle(e.pos.x, e.pos.y, e.radius * 2);
+        
+        if (e.type === 'lust_orb') {
+            p.circle(e.pos.x, e.pos.y, e.radius * 2);
+        } else {
+            p.push();
+            p.translate(e.pos.x, e.pos.y);
+            if (e.type === 'orbiter' || e.type === 'mini_boss') p.rotate(frame * 0.05);
+            else if (e.type === 'swooper') p.rotate(Math.sin(frame * 0.1) * 0.5);
+            
+            // Draw inverted triangle (pointing down) for hostile look
+            let r = e.radius;
+            // Equilateral triangle pointing down centered
+            p.triangle(0, r, -r, -r, r, -r);
+            
+            // Inner detail for mini_boss
+            if (e.type === 'mini_boss') {
+                p.fill(255, 100);
+                p.triangle(0, r/2, -r/2, -r/2, r/2, -r/2);
+            }
+            p.pop();
+        }
 
         // Bounds
         if (e.pos.y > p.height + 50 || e.pos.x < -50 || e.pos.x > p.width + 50) {
@@ -1892,13 +2135,20 @@ export const createSketch = (
              }
 
              if (player.invulnerable <= 0 && player.shieldTimer <= 0) {
-               player.hp -= 10;
+               // Calculate dynamic damage based on speed scale (Higher Speed = Lower Damage)
+               // Base damage is 10.
+               // If speed is 2.0x, damage is 5.
+               // If speed is 0.5x, damage is 20.
+               const damage = Math.ceil(10 / userSpeedScale);
+               
+               player.hp -= damage;
                setHealth(player.hp);
                player.invulnerable = 60;
                createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 10);
                enemyBullets.splice(i, 1);
                if (player.hp <= 0) {
                  setGameState(GameState.GAME_OVER);
+                 gameState = GameState.GAME_OVER; // STOP GAME LOOP INSTANTLY
                  createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 50);
                }
              } else {
@@ -1971,6 +2221,10 @@ export const createSketch = (
                          setBossHealth((boss.hp / BOSS_MAX_HP) * 100);
                          createExplosion(b.pos.x, b.pos.y, COLORS[`BOSS_${boss.type}`], 2);
                          
+                         // Score on HIT
+                         score += SCORE_PER_HIT;
+                         setScore(score);
+
                          // 5% HP Drop Mechanic
                          while (boss.hp < boss.nextPowerUpHp) {
                              spawnPowerUp(boss.pos.x, boss.pos.y);
@@ -1979,7 +2233,10 @@ export const createSketch = (
                      }
 
                      if (boss.hp <= 0) {
+                        score += BOSS_SCORE_REWARD;
+                        setScore(score);
                         setGameState(GameState.VICTORY);
+                        gameState = GameState.VICTORY; // STOP GAME LOOP INSTANTLY
                         createExplosion(boss.pos.x, boss.pos.y, COLORS[`BOSS_${boss.type}`], 100);
                         boss.active = false;
                      }
