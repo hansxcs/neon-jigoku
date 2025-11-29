@@ -102,7 +102,7 @@ const App = () => {
       </div>
 
       <!-- Game Canvas Wrapper - Removed padding on mobile to allow full screen -->
-      <div className="relative z-0 w-full h-full flex items-center justify-center p-0 md:p-4">
+      <div className="relative z-0 w-full h-full flex items-center justify-center p-0">
         <${GameCanvas} 
           setScore=${setScore} 
           setHealth=${setHealth} 

@@ -11,13 +11,9 @@ const GameCanvas = ({ setScore, setHealth, setBossHealth, setGameState, setStage
   useEffect(() => {
     if (!containerRef.current) return;
 
-    // Detect if mobile (simple width check or user agent if needed, width is usually sufficient for responsive layout)
-    const isMobile = window.innerWidth < 768; 
-    
-    // On mobile, use exact window dimensions to fill the screen.
-    // On desktop, stick to the fixed arcade resolution.
-    const targetW = isMobile ? window.innerWidth : 800;
-    const targetH = isMobile ? window.innerHeight : 600;
+    // Always use full window dimensions for maximum responsiveness
+    const targetW = window.innerWidth;
+    const targetH = window.innerHeight;
 
     // Create the p5 instance with dynamic dimensions
     const sketch = createSketch(
@@ -27,11 +23,6 @@ const GameCanvas = ({ setScore, setHealth, setBossHealth, setGameState, setStage
     );
     const myP5 = new p5(sketch, containerRef.current);
     p5Instance.current = myP5;
-
-    // Adjust container Aspect Ratio dynamically only for desktop
-    if (!isMobile) {
-        containerRef.current.style.aspectRatio = `${targetW}/${targetH}`;
-    }
 
     return () => {
       myP5.remove();
@@ -45,12 +36,8 @@ const GameCanvas = ({ setScore, setHealth, setBossHealth, setGameState, setStage
      }
   }, [gameState, selectedBoss]);
 
-  // Dynamic Border/Style classes
-  // Mobile: No border, full size. Desktop: Border, rounded.
-  const isMobile = window.innerWidth < 768;
-  const containerClasses = isMobile 
-    ? "w-full h-full bg-black overflow-hidden"
-    : "w-full border-4 border-cyan-500 rounded-lg shadow-[0_0_20px_rgba(0,255,255,0.5)] overflow-hidden bg-black";
+  // Always full screen, no borders
+  const containerClasses = "w-full h-full bg-black overflow-hidden";
 
   return React.createElement('div', {
     ref: containerRef,
