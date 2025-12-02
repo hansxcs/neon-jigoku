@@ -1,4 +1,5 @@
 
+
 import p5 from 'p5';
 import { COLORS, PLAYER_SPEED, PLAYER_RADIUS, BOSS_RADIUS, BOSS_SQUARE_SIZE, BOSS_MAX_HP, BULLET_SPEED, PLAYER_HITBOX, ENEMY_BULLET_BASE_SPEED, MAX_WEAPON_LEVEL, BASE_BULLET_SPEED_SCALE, OVAL_BOSS_MOVE_SPEED, SHIELD_DURATION, MAX_SHIELD_CHARGES, BOSS_SCORE_REWARD, SCORE_PER_HIT } from '../constants.js';
 import { GameState, PowerUpType, WeaponType } from '../types.js';
@@ -23,9 +24,11 @@ const BOSS_MODULES = {
     'MATH': MathBoss
 };
 
+const MAX_PARTICLES = 200;
+
 export const createSketch = (
   setScore, setHealth, setBossHealth, setGameState, setStage, setWeaponInfo,
-  triggerShieldRef, setPlayerStatus, bulletSpeedRef, targetW, targetH
+  triggerShieldRef, setPlayerStatus, bulletSpeedRef, lowFPSRef, targetW, targetH
 ) => {
   return (p) => {
     // --- Game Entities ---
@@ -87,10 +90,12 @@ export const createSketch = (
     // --- Helpers ---
     const spawnEnemyBullet = (x, y, vx, vy, speed, color, shape = 'CIRCLE', bounces = 0, canSplit = false, accelerating = false, subType = null) => {
       if (enemyBullets.length > 500) return;
+      // Default to white if color is undefined to prevent crash
+      const safeColor = color || [255, 255, 255];
       let b = {
         pos: p.createVector(x, y),
         vel: p.createVector(vx * speed, vy * speed),
-        color: color, r: 6, shape: shape, angle: 0, bounces: bounces,
+        color: safeColor, r: 6, shape: shape, angle: 0, bounces: bounces,
         canSplit: canSplit, splitTimer: canSplit ? p.random(30, 60) : 0, splitGen: canSplit ? 2 : 0,
         accelerating: accelerating, speed: speed, subType: subType
       };
@@ -115,6 +120,7 @@ export const createSketch = (
     };
 
     const spawnMathParticle = () => {
+        if (mathParticles.length > 30) return;
         mathParticles.push({
             x: p.random(p.width), y: p.random(p.height), vx: p.random(-0.5, 0.5), vy: p.random(-0.5, 0.5),
             life: 1.0, text: p.random(['π', '∞', '∑', '∫', '√', '≠', '±', '∆', '%', '!']), size: p.random(12, 24)
@@ -134,7 +140,7 @@ export const createSketch = (
       if (type === 'mini_boss') { hp = 500; radius = 30; scoreVal = 1000; }
       if (type === 'lust_orb') { hp = 1200; radius = 100; scoreVal = 2000; }
 
-      particles.push({ x: x, y: y, vx: 0, vy: 0, life: 1.0, color: COLORS.BOSS_TRIANGLE, size: 5, isShockwave: true });
+      createExplosion(x, y, COLORS.BOSS_TRIANGLE, 5); // Lightweight spawn effect
 
       enemies.push({
         pos: p.createVector(x, y), vel: p.createVector(0, 0),
@@ -145,12 +151,15 @@ export const createSketch = (
     };
 
     const createExplosion = (x, y, color, count) => {
+      if (particles.length > MAX_PARTICLES) return;
+      // Safe color check
+      const safeColor = color || [255, 255, 255];
       for(let i=0; i<count; i++) {
         const angle = p.random(p.TWO_PI);
         const speed = p.random(1, 4);
         particles.push({
           x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-          life: 1.0, color: color, size: p.random(2, 5)
+          life: 1.0, color: safeColor, size: p.random(2, 5)
         });
       }
     };
@@ -201,7 +210,8 @@ export const createSketch = (
     };
 
     const drawMathGrid = () => {
-        p.stroke(COLORS.BOSS_MATH_GRID); p.strokeWeight(1);
+        if (COLORS.BOSS_MATH_GRID) p.stroke(...COLORS.BOSS_MATH_GRID); else p.stroke(50, 50, 80, 50); 
+        p.strokeWeight(1);
         for(let x = 0; x <= p.width; x += 40) p.line(x, 0, x, p.height);
         for(let y = 0; y <= p.height; y += 40) p.line(0, y, p.width, y);
         // Ensure right/bottom edges are drawn
@@ -211,6 +221,9 @@ export const createSketch = (
 
     // --- MAIN DRAW LOOP ---
     p.draw = () => {
+      // Dynamic Framerate
+      if (lowFPSRef && lowFPSRef.current) p.frameRate(30); else p.frameRate(60);
+
       const userSpeedScale = bulletSpeedRef?.current || 1.0;
       let baseSpeed = (ENEMY_BULLET_BASE_SPEED + (currentStageIndex * 0.5)) * BASE_BULLET_SPEED_SCALE * userSpeedScale;
 
@@ -219,12 +232,15 @@ export const createSketch = (
       // Camera Shake
       if (stageTransitionTimer > 150) { p.push(); p.translate(p.random(-8, 8), p.random(-8, 8)); }
 
-      // Stars
-      p.noStroke(); p.fill(255, 100);
+      // Stars (Performance Optimized)
+      p.noFill(); 
       for(let star of stars) {
         star.y += star.z; if(star.y > p.height) { star.y = 0; star.x = p.random(p.width); }
-        p.circle(star.x, star.y, star.z);
+        p.stroke(255, 150);
+        p.strokeWeight(star.z);
+        p.point(star.x, star.y);
       }
+      p.strokeWeight(1); // Reset
 
       // Math Particles
       for(let i=mathParticles.length-1; i>=0; i--) {
@@ -232,6 +248,25 @@ export const createSketch = (
           p.textSize(mp.size); p.fill(200, 200, 255, mp.life * 150); p.text(mp.text, mp.x, mp.y);
           if (mp.life <= 0) mathParticles.splice(i, 1);
       }
+      
+      // Explosion Particles
+      for(let i=particles.length-1; i>=0; i--) {
+          let pt = particles[i];
+          pt.x += pt.vx; pt.y += pt.vy; pt.life -= 0.05;
+          let alpha = pt.life * 255;
+          if (pt.isShockwave) {
+              p.noFill(); p.stroke(pt.color[0], pt.color[1], pt.color[2], alpha);
+              p.strokeWeight(2); p.circle(pt.x, pt.y, (1.0-pt.life)*100);
+          } else {
+              p.noStroke(); 
+              // Safe access
+              if (pt.color) p.fill(pt.color[0], pt.color[1], pt.color[2], alpha);
+              else p.fill(255, alpha);
+              p.circle(pt.x, pt.y, pt.size);
+          }
+          if(pt.life <= 0) particles.splice(i, 1);
+      }
+
       if (boss.type === 'MATH' && boss.active) {
           drawMathGrid();
           if (frame % 60 === 0 && mathParticles.length < 20) spawnMathParticle();
@@ -278,8 +313,8 @@ export const createSketch = (
       player.pos.y = p.constrain(player.pos.y, PLAYER_RADIUS, p.height - PLAYER_RADIUS);
 
       // Render Blockers
-      p.noStroke(); p.fill(COLORS.BLOCKER); p.rectMode(p.CENTER);
-      for(let b of blockers) { p.rect(b.pos.x, b.pos.y, b.w, b.h); p.stroke(255, 100); p.noFill(); p.rect(b.pos.x, b.pos.y, b.w, b.h); p.noStroke(); p.fill(COLORS.BLOCKER); }
+      p.noStroke(); p.fill(...COLORS.BLOCKER); p.rectMode(p.CENTER);
+      for(let b of blockers) { p.rect(b.pos.x, b.pos.y, b.w, b.h); p.stroke(255, 100); p.noFill(); p.rect(b.pos.x, b.pos.y, b.w, b.h); p.noStroke(); p.fill(...COLORS.BLOCKER); }
 
       // 2. Player Shoot
       if (player.weaponTimer > 0) { player.weaponTimer--; if (player.weaponTimer <= 0) { player.weaponType = WeaponType.DEFAULT; player.weaponLevel = 1; } }
@@ -316,7 +351,7 @@ export const createSketch = (
           
           if (stage > currentStageIndex) {
               currentStageIndex = stage; setStage(stage + 1); stageTransitionTimer = 180;
-              enemyBullets = []; stasisOrbs = []; createExplosion(boss.pos.x, boss.pos.y, COLORS[`BOSS_${boss.type}`], 40);
+              enemyBullets = []; stasisOrbs = []; createExplosion(boss.pos.x, boss.pos.y, COLORS[`BOSS_${boss.type}`] || [255,255,255], 40);
               // Init Stage Specifics
               if (BOSS_MODULES[boss.type] && BOSS_MODULES[boss.type].onStageChange) {
                   BOSS_MODULES[boss.type].onStageChange(boss, stage, spawnMinion);
@@ -328,7 +363,7 @@ export const createSketch = (
               const data = {
                   frame, stage: currentStageIndex, baseSpeed, 
                   spawnBullet: spawnEnemyBullet, spawnMinion, spawnMeteorAttack, spawnStasisOrb, spawnMathParticle, createExplosion,
-                  setHealth, enemyBullets, particles, blockers, sandTraps, stageTransitionTimer, globalTimeScale
+                  setHealth, enemies, enemyBullets, particles, blockers, sandTraps, stageTransitionTimer, globalTimeScale
               };
               
               // Update returns new time scale if boss modifies it (Hourglass)
@@ -339,8 +374,11 @@ export const createSketch = (
 
       // 4. Draw Boss
       if (boss.active) {
-          if (stageTransitionTimer > 0) { if (frame % 4 < 2) p.fill(255); else p.fill(COLORS[`BOSS_${boss.type}`]); boss.opacity = 255; } 
-          else p.fill(COLORS[`BOSS_${boss.type}`][0], COLORS[`BOSS_${boss.type}`][1], COLORS[`BOSS_${boss.type}`][2], boss.opacity);
+          if (stageTransitionTimer > 0) { if (frame % 4 < 2) p.fill(255); else p.fill(...(COLORS[`BOSS_${boss.type}`] || [255,255,255])); boss.opacity = 255; } 
+          else {
+              const c = COLORS[`BOSS_${boss.type}`] || [255,255,255];
+              p.fill(c[0], c[1], c[2], boss.opacity);
+          }
           
           p.push();
           p.translate(boss.pos.x, boss.pos.y);
@@ -366,7 +404,9 @@ export const createSketch = (
            // ... other logic
         }
         
-        p.fill(e.type==='lust_orb' ? COLORS.ENEMY_LUST_ORB : (e.type==='mini_boss' ? COLORS.ENEMY_MINI_BOSS : COLORS.ENEMY)); p.noStroke();
+        const c = e.type === 'lust_orb' ? COLORS.ENEMY_LUST_ORB : (e.type === 'mini_boss' ? COLORS.ENEMY_MINI_BOSS : COLORS.ENEMY);
+        p.fill(...c); 
+        p.noStroke();
         if (e.type==='lust_orb') p.circle(e.pos.x, e.pos.y, e.radius*2);
         else { p.push(); p.translate(e.pos.x, e.pos.y); p.rotate(e.type==='swooper' ? Math.sin(frame*0.1) : frame*0.05); p.triangle(0, e.radius, -e.radius, -e.radius, e.radius, -e.radius); p.pop(); }
         
@@ -387,13 +427,26 @@ export const createSketch = (
               }
           }
           if (boss.type === 'HOURGLASS' && boss.timeState === 'STOPPED') { 
-              if (b.shape === 'KNIFE') { p.push(); p.translate(b.pos.x + p.random(-1,1), b.pos.y + p.random(-1,1)); p.rotate(b.angle); p.fill(b.color); p.triangle(-5,-3,-5,3,10,0); p.pop(); }
-              else { p.fill(b.color); p.circle(b.pos.x, b.pos.y, b.r*2); }
+              if (b.shape === 'KNIFE') { 
+                  p.push(); p.translate(b.pos.x + p.random(-1,1), b.pos.y + p.random(-1,1)); p.rotate(b.angle); 
+                  if (Array.isArray(b.color)) p.fill(...b.color); else p.fill(255);
+                  p.triangle(-5,-3,-5,3,10,0); p.pop(); 
+              }
+              else { 
+                  if (Array.isArray(b.color)) p.fill(...b.color); else p.fill(255);
+                  p.circle(b.pos.x, b.pos.y, b.r*2); 
+              }
           } else {
               b.pos.x += b.vel.x * globalTimeScale; b.pos.y += b.vel.y * globalTimeScale;
               if (b.bounces > 0) { if(b.pos.x<0||b.pos.x>p.width) { b.vel.x*=-1; b.bounces--; } if(b.pos.y<0||b.pos.y>p.height) { b.vel.y*=-1; b.bounces--; } }
               
-              p.fill(b.color); p.noStroke();
+              // Safe color fill with spread
+              if (Array.isArray(b.color)) p.fill(...b.color);
+              else if (b.color) p.fill(b.color); 
+              else p.fill(255);
+              
+              p.noStroke();
+              
               if (b.shape === 'CIRCLE') p.circle(b.pos.x, b.pos.y, b.r*2);
               else if (b.shape === 'RECT') { p.push(); p.translate(b.pos.x, b.pos.y); p.rotate(frame*0.2); p.rect(0,0,10,20); p.pop(); }
               else if (b.shape === 'METEOR') { p.circle(b.pos.x, b.pos.y, 25); p.fill(255, 100); p.circle(b.pos.x-b.vel.x*2, b.pos.y-b.vel.y*2, 15); }
@@ -419,9 +472,9 @@ export const createSketch = (
             let md = 10000;
             for(let e of enemies) { let d = p.dist(b.pos.x, b.pos.y, e.pos.x, e.pos.y); if(d<md) { md=d; t=e; } }
             if (boss.active) { let d = p.dist(b.pos.x, b.pos.y, boss.pos.x, boss.pos.y); if(d<md) t=boss; }
-            if (t) { let a = Math.atan2(t.pos.y-b.pos.y, t.pos.x-b.pos.x); b.vel.x = p.lerp(b.vel.x, Math.cos(a)*BULLET_SPEED, 0.1); b.vel.y = p.lerp(b.vel.y, Math.sin(a)*BULLET_SPEED, 0.1); }
+            if (t) { let a = Math.atan2(t.pos.y-b.pos.y, t.pos.x-b.pos.x); b.vel.x = p.lerp(b.vel.x, Math.cos(a)*BULLET_SPEED, 0.2); b.vel.y = p.lerp(b.vel.y, Math.sin(a)*BULLET_SPEED, 0.2); }
         }
-        b.pos.add(b.vel); p.fill(COLORS.PLAYER_BULLET); p.circle(b.pos.x, b.pos.y, 8);
+        b.pos.add(b.vel); p.fill(...COLORS.PLAYER_BULLET); p.circle(b.pos.x, b.pos.y, 8);
         if (b.pos.y < -10) player.bullets.splice(i, 1);
       }
       
@@ -429,20 +482,40 @@ export const createSketch = (
       for (let i = powerUps.length - 1; i >= 0; i--) {
           let pu = powerUps[i];
           pu.y += 2;
+          // Magnetism
+          let d = p.dist(player.pos.x, player.pos.y, pu.x, pu.y);
+          if (d < 150) {
+              pu.x = p.lerp(pu.x, player.pos.x, 0.05);
+              pu.y = p.lerp(pu.y, player.pos.y, 0.05);
+          }
+
           // Constrain bounds
           pu.x = p.constrain(pu.x, 20, p.width-20);
           
           let col = COLORS.POWERUP_SPREAD;
-          if (pu.type === PowerUpType.RAPID) col = COLORS.POWERUP_RAPID;
-          if (pu.type === PowerUpType.HOMING) col = COLORS.POWERUP_HOMING;
-          if (pu.type === PowerUpType.HEAL) col = COLORS.POWERUP_HEAL;
-          if (pu.type === PowerUpType.TRAP) col = COLORS.POWERUP_TRAP;
+          let txt = 'S';
+          let textColor = 0; // Black text by default
+          if (pu.type === PowerUpType.RAPID) { col = COLORS.POWERUP_RAPID; txt = 'R'; }
+          if (pu.type === PowerUpType.HOMING) { col = COLORS.POWERUP_HOMING; txt = 'H'; }
+          if (pu.type === PowerUpType.HEAL) { col = COLORS.POWERUP_HEAL; txt = '+'; }
+          if (pu.type === PowerUpType.SHIELD) { col = COLORS.POWERUP_SHIELD; txt = 'S+'; }
+          if (pu.type === PowerUpType.TRAP) { col = COLORS.POWERUP_TRAP; txt = '!'; textColor = 255; } // White text for dark trap
 
-          p.fill(col); p.noStroke();
-          p.circle(pu.x, pu.y, 20 + Math.sin(frame * 0.2) * 4);
+          p.fill(...col); p.noStroke();
+          // Visual Pulse
+          let pulseSize = 20 + Math.sin(frame * 0.2) * 4;
+          p.circle(pu.x, pu.y, pulseSize);
           
-          if (p.dist(player.pos.x, player.pos.y, pu.x, pu.y) < player.radius + 10) {
+          // Ring
+          p.noFill(); p.stroke(255, 150); p.strokeWeight(2);
+          p.circle(pu.x, pu.y, pulseSize + 4);
+          
+          p.noStroke();
+          p.fill(textColor); p.textAlign(p.CENTER, p.CENTER); p.textSize(12); p.text(txt, pu.x, pu.y);
+          
+          if (d < player.radius + 15) {
               if (pu.type === PowerUpType.HEAL) { player.hp = Math.min(100, player.hp + 20); setHealth(player.hp); }
+              else if (pu.type === PowerUpType.SHIELD) { player.shieldCharges = Math.min(MAX_SHIELD_CHARGES, player.shieldCharges + 1); updatePlayerStatus(); }
               else if (pu.type === PowerUpType.TRAP) { player.hp -= 30; setHealth(player.hp); createExplosion(player.pos.x, player.pos.y, COLORS.POWERUP_TRAP, 10); }
               else {
                   // If same weapon, level up. If different, switch.
@@ -460,9 +533,9 @@ export const createSketch = (
       // Collisions
       if (player.invulnerable > 0) player.invulnerable--;
       if (player.invulnerable % 10 < 5) {
-          p.fill(COLORS.PLAYER); p.noStroke(); p.triangle(player.pos.x, player.pos.y-PLAYER_RADIUS*1.5, player.pos.x-PLAYER_RADIUS, player.pos.y+PLAYER_RADIUS, player.pos.x+PLAYER_RADIUS, player.pos.y+PLAYER_RADIUS);
+          p.fill(...COLORS.PLAYER); p.noStroke(); p.triangle(player.pos.x, player.pos.y-PLAYER_RADIUS*1.5, player.pos.x-PLAYER_RADIUS, player.pos.y+PLAYER_RADIUS, player.pos.x+PLAYER_RADIUS, player.pos.y+PLAYER_RADIUS);
           p.fill(255, 0, 0); p.circle(player.pos.x, player.pos.y, PLAYER_HITBOX * 2);
-          if (player.shieldTimer > 0) { p.noFill(); p.stroke(COLORS.PLAYER_SHIELD); p.strokeWeight(2); p.circle(player.pos.x, player.pos.y, 50); }
+          if (player.shieldTimer > 0) { p.noFill(); p.stroke(...COLORS.PLAYER_SHIELD); p.strokeWeight(2); p.circle(player.pos.x, player.pos.y, 50); }
       }
       for (let i = 0; i < enemyBullets.length; i++) {
           let b = enemyBullets[i];
@@ -491,7 +564,7 @@ export const createSketch = (
                    if(enemies[j].hp<=0) {
                         createExplosion(enemies[j].pos.x, enemies[j].pos.y, COLORS.ENEMY, 10);
                         score += enemies[j].scoreVal || 100; setScore(score);
-                        if(p.random()<0.5) powerUps.push({x: enemies[j].pos.x, y: enemies[j].pos.y, type: p.random([1,2,3,4]), radius: 10, active: true});
+                        if(p.random()<0.5) powerUps.push({x: enemies[j].pos.x, y: enemies[j].pos.y, type: p.random([1,2,3,4,5]), radius: 10, active: true});
                         enemies.splice(j,1);
                    }
                    hit=true; break;
@@ -506,7 +579,7 @@ export const createSketch = (
                     else {
                         boss.hp -= b.dmg * player.damageMult; setBossHealth((boss.hp/BOSS_MAX_HP)*100); score += SCORE_PER_HIT; setScore(score);
                         while (boss.hp < boss.nextPowerUpHp) {
-                             powerUps.push({ x: boss.pos.x, y: boss.pos.y, type: p.random([1,2,3,4]), radius: 10, active: true });
+                             powerUps.push({ x: boss.pos.x, y: boss.pos.y, type: p.random([1,2,3,4,5]), radius: 10, active: true });
                              boss.nextPowerUpHp -= (BOSS_MAX_HP * 0.05);
                         }
                     }

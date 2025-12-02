@@ -1,4 +1,5 @@
 
+
 import { COLORS } from '../../constants.js';
 import { Patterns } from '../patterns.js';
 
@@ -22,14 +23,9 @@ export const MathBoss = {
     update: (p, boss, player, data) => {
         const { frame, stage, baseSpeed, spawnBullet, spawnMathParticle, createExplosion, setHealth, stageTransitionTimer } = data;
 
-        // Figure-8 Movement
-        if (boss.mathState === 'SPIN') {
-             boss.pos.x = p.width / 2 + Math.cos(frame * 0.05) * 100;
-             boss.pos.y = 150 + Math.sin(frame * 0.1) * 30; 
-        } else {
-             boss.pos.x = p.lerp(boss.pos.x, p.width / 2, 0.05);
-             boss.pos.y = p.lerp(boss.pos.y, 100, 0.05);
-        }
+        // Stationary Center Position
+        boss.pos.x = p.width / 2;
+        boss.pos.y = 150;
 
         if (stageTransitionTimer < 140) {
             switch(boss.mathState) {
@@ -72,8 +68,7 @@ export const MathBoss = {
                     if (stage >= 3) maxRange = 50; 
                     if (stage >= 4) maxRange = 99;
                     
-                    // Logic to calculate result based on operator (Moved from sketch)
-                    // ... (Simplifying for brevity, copy math logic) ...
+                    // Logic to calculate result based on operator
                     if (boss.operator === '+') {
                         boss.operands = [Math.floor(p.random(1, maxRange)), Math.floor(p.random(1, maxRange))];
                         boss.mathResult = boss.operands[0] + boss.operands[1];
@@ -149,9 +144,19 @@ export const MathBoss = {
                          
                          // Visuals
                          if (boss.mathTimer > 60) {
-                             if (frame % 20 < 10) { p.noStroke(); p.fill(COLORS.BOSS_INEQUALITY_WARN); p.rectMode(p.CORNER); p.rect(x, y, w, h); p.fill(255); p.textSize(40); p.textAlign(p.CENTER, p.CENTER); p.text("WARNING", x + w/2, y + h/2); }
+                             if (frame % 20 < 10) { 
+                                p.noStroke(); 
+                                if (COLORS.BOSS_INEQUALITY_WARN) p.fill(...COLORS.BOSS_INEQUALITY_WARN); else p.fill(255, 200, 0, 100);
+                                p.rectMode(p.CORNER); 
+                                p.rect(x, y, w, h); 
+                                p.fill(255); p.textSize(40); p.textAlign(p.CENTER, p.CENTER); p.text("WARNING", x + w/2, y + h/2); 
+                             }
                          } else {
-                             p.noStroke(); p.fill(COLORS.BOSS_INEQUALITY); p.rectMode(p.CORNER); p.rect(x, y, w, h); p.fill(255); p.textSize(40); p.textAlign(p.CENTER, p.CENTER); p.text("DANGER", x + w/2, y + h/2);
+                             p.noStroke(); 
+                             if (COLORS.BOSS_INEQUALITY) p.fill(...COLORS.BOSS_INEQUALITY); else p.fill(255, 0, 0, 100);
+                             p.rectMode(p.CORNER); 
+                             p.rect(x, y, w, h); 
+                             p.fill(255); p.textSize(40); p.textAlign(p.CENTER, p.CENTER); p.text("DANGER", x + w/2, y + h/2);
                              if (danger && player.invulnerable <= 0 && player.shieldTimer <= 0) { player.hp -= 2; setHealth(player.hp); createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 1); }
                          }
                     }
@@ -201,11 +206,5 @@ export const MathBoss = {
            if (boss.operator === '<' || boss.operator === '>') res = 'ZONE';
            p.text("= " + res, 0, -60);
        }
-       
-       // Draw Grid
-       p.push();
-       p.resetMatrix(); // Reset transform to draw grid relative to screen
-       // Actually grid is drawn in sketch.js main loop, so we don't need it here.
-       p.pop();
     }
 };

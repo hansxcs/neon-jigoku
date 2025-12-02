@@ -65,9 +65,16 @@ export const HexagonBoss = {
                  atk.timer--;
                  
                  // Render Warning Line
-                 p.stroke(COLORS.BOSS_METEOR);
+                 // Explicitly spread color arrays to avoid p5.js errors
+                 if (Array.isArray(COLORS.BOSS_METEOR)) p.stroke(...COLORS.BOSS_METEOR); 
+                 else p.stroke(255);
+                 
                  p.strokeWeight(Math.max(1, 4 * (1 - atk.timer/60))); 
-                 if (atk.timer % 10 < 5) p.stroke(COLORS.BOSS_LIGHTNING); 
+                 
+                 if (atk.timer % 10 < 5) {
+                     if (Array.isArray(COLORS.BOSS_LIGHTNING)) p.stroke(...COLORS.BOSS_LIGHTNING); 
+                     else p.stroke(0, 255, 255);
+                 }
                  
                  let tx = atk.x + atk.dx * 1200; 
                  let ty = atk.y + atk.dy * 1200;
@@ -125,7 +132,7 @@ export const HexagonBoss = {
     draw: (p, boss, frame) => {
         const radius = BOSS_HEXAGON_SIZE;
         // Lightning Hexagon Visual
-        p.stroke(boss.color);
+        if (Array.isArray(boss.color)) p.stroke(...boss.color); else p.stroke(0, 255, 255);
         p.strokeWeight(3);
         p.noFill();
         p.beginShape();

@@ -1,4 +1,5 @@
 
+
 export const GameState = {
   MENU: 0,
   PLAYING: 1,
@@ -17,5 +18,7 @@ export const PowerUpType = {
   SPREAD: 1, // Matches WeaponType.SPREAD
   RAPID: 2,  // Matches WeaponType.RAPID
   HOMING: 3, // Matches WeaponType.HOMING
-  HEAL: 4
+  HEAL: 4,
+  SHIELD: 5,
+  TRAP: 99
 };

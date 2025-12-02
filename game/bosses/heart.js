@@ -1,4 +1,5 @@
 
+
 import { COLORS, BOSS_RADIUS } from '../../constants.js';
 import { Patterns } from '../patterns.js';
 
@@ -61,7 +62,7 @@ export const HeartBoss = {
               // Wait, the Boss draw is called inside push/pop translate in sketch.
               // So we are at (0,0) relative to boss.
               p.noFill();
-              p.stroke(COLORS.BOSS_SHIELD);
+              p.stroke(...COLORS.BOSS_SHIELD);
               p.strokeWeight(4);
               p.arc(0, 0, 140, 140, -p.PI/2, -p.PI/2 + (p.TWO_PI * (boss.shield/boss.maxShield)));
               p.noStroke();

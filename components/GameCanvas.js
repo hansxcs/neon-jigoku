@@ -1,10 +1,11 @@
 
+
 import React, { useEffect, useRef } from 'react';
 import p5 from 'p5';
 import { createSketch } from '../game/sketch.js';
 import { GameState } from '../types.js';
 
-const GameCanvas = ({ setScore, setHealth, setBossHealth, setGameState, setStage, setWeaponInfo, gameState, selectedBoss, triggerShieldRef, setPlayerStatus, bulletSpeedRef }) => {
+const GameCanvas = ({ setScore, setHealth, setBossHealth, setGameState, setStage, setWeaponInfo, gameState, selectedBoss, triggerShieldRef, setPlayerStatus, bulletSpeedRef, lowFPSRef }) => {
   const containerRef = useRef(null);
   const p5Instance = useRef(null);
 
@@ -18,7 +19,7 @@ const GameCanvas = ({ setScore, setHealth, setBossHealth, setGameState, setStage
     // Create the p5 instance with dynamic dimensions
     const sketch = createSketch(
         setScore, setHealth, setBossHealth, setGameState, setStage, setWeaponInfo, 
-        triggerShieldRef, setPlayerStatus, bulletSpeedRef, 
+        triggerShieldRef, setPlayerStatus, bulletSpeedRef, lowFPSRef,
         targetW, targetH
     );
     const myP5 = new p5(sketch, containerRef.current);

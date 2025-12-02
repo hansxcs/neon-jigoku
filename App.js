@@ -1,4 +1,5 @@
 
+
 import React, { useState, useRef } from 'react';
 import htm from 'htm';
 import GameCanvas from './components/GameCanvas.js';
@@ -15,10 +16,12 @@ const App = () => {
   const [weaponInfo, setWeaponInfo] = useState({ name: 'DEFAULT', level: 1, timer: 0 });
   const [selectedBoss, setSelectedBoss] = useState('RANDOM');
   const [playerStatus, setPlayerStatus] = useState({ shieldCharges: 3, shieldTimer: 0 });
+  const [lowFPS, setLowFPS] = useState(false);
   
   // Bullet Speed Control
   const [bulletSpeed, setBulletSpeed] = useState(1.0);
   const bulletSpeedRef = useRef(1.0);
+  const lowFPSRef = useRef(false);
 
   // Ref to trigger shield from UI
   const triggerShieldRef = useRef(null);
@@ -40,6 +43,11 @@ const App = () => {
   const resetSpeed = () => {
       setBulletSpeed(1.0);
       bulletSpeedRef.current = 1.0;
+  };
+  
+  const toggleFPS = () => {
+      setLowFPS(!lowFPS);
+      lowFPSRef.current = !lowFPS;
   };
 
   const getWeaponClass = (name) => {
@@ -115,6 +123,7 @@ const App = () => {
           selectedBoss=${selectedBoss}
           triggerShieldRef=${triggerShieldRef}
           bulletSpeedRef=${bulletSpeedRef}
+          lowFPSRef=${lowFPSRef}
         />
       </div>
 
@@ -176,6 +185,14 @@ const App = () => {
                 <div className="text-[9px] text-center mt-1 font-bold ${bulletSpeed > 1 ? 'text-green-400' : bulletSpeed < 1 ? 'text-red-400' : 'text-gray-500'}">
                     ${bulletSpeed > 1 ? '⚠️ HIGHER SPEED = WEAK BULLETS' : bulletSpeed < 1 ? '⚠️ LOWER SPEED = DEADLY BULLETS' : 'NORMAL DAMAGE'}
                 </div>
+            </div>
+            
+            <!-- FPS Control -->
+            <div className="w-full mb-3 flex justify-between items-center bg-gray-900/80 p-2 rounded border border-gray-700">
+               <span className="text-[10px] text-gray-400 font-bold uppercase">Performance</span>
+               <button onClick=${toggleFPS} className=${`px-2 py-1 rounded text-[10px] font-bold border ${lowFPS ? 'bg-yellow-600 border-yellow-400 text-white' : 'bg-gray-700 border-gray-600 text-gray-400'}`}>
+                  ${lowFPS ? '30 FPS (LOW)' : '60 FPS (NORMAL)'}
+               </button>
             </div>
 
             <div className="w-full mb-3 flex flex-col items-center gap-1">

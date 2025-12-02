@@ -327,7 +327,7 @@ export const Patterns = {
       // Golden Angle ~ 137.5 degrees ~ 2.39996 radians
       const goldenAngle = 2.39996;
       // Fire multiple bullets per frame to create the dense pattern
-      const burst = 2;
+      const burst = 5; // INCREASED BURST
       for (let i = 0; i < burst; i++) {
           // Use frame count as index for spiral
           const n = frame * burst + i;

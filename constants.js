@@ -84,6 +84,7 @@ export const COLORS = {
   POWERUP_RAPID: [255, 255, 0],   // Yellow
   POWERUP_HOMING: [150, 100, 255], // Purple
   POWERUP_HEAL: [255, 100, 150], // Pink
+  POWERUP_SHIELD: [0, 200, 255], // Cyan Blue
   POWERUP_TRAP: [80, 0, 0], // Dark Red Glitch
   
   BLOCKER: [0, 200, 255], // Cyan Blue for blocker fields

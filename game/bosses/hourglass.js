@@ -46,7 +46,7 @@ export const HourglassBoss = {
             p.translate(p.width/2, -50);
             p.rotate(boss.pendulum.angle);
             
-            p.stroke(COLORS.BOSS_PENDULUM); p.strokeWeight(4);
+            p.stroke(...COLORS.BOSS_PENDULUM); p.strokeWeight(4);
             p.line(0, 0, 0, boss.pendulum.length);
 
             // Sand Trail
@@ -217,25 +217,46 @@ export const HourglassBoss = {
     },
 
     draw: (p, boss, frame) => {
-        // Interpolate Angle
-        boss.angle = p.lerp(boss.angle, boss.targetAngle, 0.1);
+        // Interpolate Angle Smoother
+        boss.angle = p.lerp(boss.angle, boss.targetAngle, 0.05);
         
-        // Top Bulb
-        p.noFill(); p.stroke(COLORS.BOSS_HOURGLASS); p.strokeWeight(4);
-        p.triangle(-30, -50, 30, -50, 0, 0);
-        p.triangle(-30, 50, 30, 50, 0, 0);
-        
-        // Sand
-        p.noStroke(); p.fill(255, 215, 0);
-        let sandLevelTop = 10 + Math.sin(frame * 0.05) * 5;
-        let sandLevelBot = 10 + frame % 40; 
-        if (boss.timeState === 'STOPPED') p.fill(100); 
-        p.triangle(-20, -40, 20, -40, 0, -5); 
-        p.triangle(-20, 45, 20, 45, 0, 45 - sandLevelBot*0.5); 
-        
-        if (boss.timeState !== 'STOPPED') {
-            p.stroke(255, 215, 0); p.strokeWeight(2);
-            p.line(0, -5, 0, 45);
+        const drawHourglass = (offsetX = 0, offsetY = 0, color = COLORS.BOSS_HOURGLASS) => {
+            p.push();
+            p.translate(offsetX, offsetY);
+            
+            // Top Bulb
+            p.noFill(); 
+            p.stroke(...color); 
+            p.strokeWeight(4);
+            p.triangle(-30, -50, 30, -50, 0, 0);
+            p.triangle(-30, 50, 30, 50, 0, 0);
+            
+            // Sand
+            p.noStroke(); p.fill(255, 215, 0);
+            let sandLevelTop = 10 + Math.sin(frame * 0.05) * 5;
+            let sandLevelBot = 10 + frame % 40; 
+            if (boss.timeState === 'STOPPED') p.fill(100); 
+            p.triangle(-20, -40, 20, -40, 0, -5); 
+            p.triangle(-20, 45, 20, 45, 0, 45 - sandLevelBot*0.5); 
+            
+            if (boss.timeState !== 'STOPPED') {
+                p.stroke(255, 215, 0); p.strokeWeight(2);
+                p.line(0, -5, 0, 45);
+            }
+            p.pop();
+        };
+
+        if (boss.timeState === 'STOPPED') {
+            // Chromatic Aberration Effect
+            p.drawingContext.save();
+            p.drawingContext.globalCompositeOperation = 'screen';
+            // Cyan Channel
+            drawHourglass(p.random(-2,2), p.random(-2,2), [0, 255, 255]);
+            // Magenta Channel
+            drawHourglass(p.random(-2,2), p.random(-2,2), [255, 0, 255]);
+            p.drawingContext.restore();
+        } else {
+            drawHourglass(0, 0, COLORS.BOSS_HOURGLASS);
         }
     }
 };

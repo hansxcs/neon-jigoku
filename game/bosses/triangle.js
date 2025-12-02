@@ -1,4 +1,5 @@
 
+
 import { COLORS, BOSS_TRIANGLE_SIZE, PLAYER_HITBOX } from '../../constants.js';
 import { Patterns } from '../patterns.js';
 import { lineCircleIntersect } from '../utils.js';
@@ -87,7 +88,7 @@ export const TriangleBoss = {
                         p.line(vx, vy, lx, ly);
                         p.drawingContext.setLineDash([]);
                     } else if (boss.laserPhase === 'FIRE') {
-                        p.stroke(COLORS.BOSS_LASER);
+                        if (Array.isArray(COLORS.BOSS_LASER)) p.stroke(...COLORS.BOSS_LASER); else p.stroke(COLORS.BOSS_LASER);
                         p.strokeWeight(6);
                         p.line(vx, vy, lx, ly);
                         p.strokeWeight(2);
