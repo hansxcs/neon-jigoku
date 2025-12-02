@@ -1,4 +1,6 @@
 
+
+
 import { COLORS } from '../../constants.js';
 import { Patterns } from '../patterns.js';
 import { drawGlitch } from '../utils.js';
@@ -14,6 +16,7 @@ export const HourglassBoss = {
         boss.history = [];
         boss.pendulum = { phase: 0, angle: 0, length: 450, bobR: 35 };
         boss.fateBeams = [];
+        boss.rewindTimer = 0; // New Timer
     },
 
     onStageChange: (boss, stage) => {
@@ -24,6 +27,24 @@ export const HourglassBoss = {
                 { active: false, y: 0, width: 0, damage: 2, orientation: 'H' }
             ];
         }
+    },
+
+    drawIntro: (p, boss, introProgress, triggerEffect) => {
+        p.fill(...COLORS.BOSS_HOURGLASS); p.noStroke();
+        
+        // Sand Vortex Coalescing
+        let vortexSpeed = 10 * introProgress;
+        for(let i=0; i<20; i++) {
+            let a = p.random(p.TWO_PI) + vortexSpeed;
+            let r = (1 - introProgress) * 300 + p.random(20);
+            p.circle(Math.cos(a)*r, Math.sin(a)*r, 5);
+        }
+        
+        p.scale(introProgress);
+        // Hourglass
+        p.noFill(); p.stroke(...COLORS.BOSS_HOURGLASS); p.strokeWeight(4);
+        p.triangle(-30, -50, 30, -50, 0, 0);
+        p.triangle(-30, 50, 30, 50, 0, 0);
     },
 
     update: (p, boss, player, data) => {
@@ -128,7 +149,35 @@ export const HourglassBoss = {
         // Returns the desired Global Time Scale to the main loop
         let nextTimeScale = globalTimeScale;
 
-        if (stage >= 2) {
+        // REWIND SKILL (Stage 3+)
+        if (stage >= 3 && boss.timeState === 'NORMAL') {
+             // Random chance to rewind every few seconds
+             if (frame % 400 === 350) { // Trigger
+                 boss.timeState = 'REWIND';
+                 boss.rewindTimer = 120; // 2 seconds
+                 drawGlitch(p);
+             }
+        }
+
+        if (boss.timeState === 'REWIND') {
+             boss.rewindTimer--;
+             nextTimeScale = -1.5; // BACKWARDS
+             
+             // Visual Cue
+             if (boss.rewindTimer % 20 < 10) {
+                 p.push();
+                 p.textSize(80); p.textAlign(p.CENTER, p.CENTER);
+                 p.fill(255, 215, 0, 150);
+                 p.text("⏪ REWIND", p.width/2, p.height/2);
+                 p.pop();
+             }
+             
+             if (boss.rewindTimer <= 0) {
+                 boss.timeState = 'NORMAL';
+                 drawGlitch(p);
+             }
+        }
+        else if (stage >= 2) {
             boss.timeAbilityTimer--;
             
             // Trigger Stop
@@ -208,7 +257,11 @@ export const HourglassBoss = {
             });
             
             if (ghostPos) {
-                 Patterns.hourglassSplash(p, ghostPos, frame - 30, (x,y,vx,vy,s,c,sh,b) => spawnBullet(x,y,vx,vy,s,COLORS.BOSS_GHOST,sh,b), baseSpeed);
+                 // Explicitly set opaque color if default is transparent
+                 const ghostColor = [218, 165, 32]; 
+                 Patterns.hourglassSplash(p, ghostPos, frame - 30, (x,y,vx,vy,s,c,sh,b) => {
+                    spawnBullet(x,y,vx,vy,s,ghostColor,sh,b);
+                 }, baseSpeed);
             }
             if (stage >= 4 && frame % 90 === 0) Patterns.timelineCollapse(p, p.width, p.height, spawnBullet, baseSpeed);
         }
@@ -218,7 +271,8 @@ export const HourglassBoss = {
 
     draw: (p, boss, frame) => {
         // Interpolate Angle Smoother
-        boss.angle = p.lerp(boss.angle, boss.targetAngle, 0.05);
+        if (boss.timeState === 'REWIND') boss.angle -= 0.1; // Spin backward
+        else boss.angle = p.lerp(boss.angle, boss.targetAngle, 0.05);
         
         const drawHourglass = (offsetX = 0, offsetY = 0, color = COLORS.BOSS_HOURGLASS) => {
             p.push();
@@ -239,9 +293,13 @@ export const HourglassBoss = {
             p.triangle(-20, -40, 20, -40, 0, -5); 
             p.triangle(-20, 45, 20, 45, 0, 45 - sandLevelBot*0.5); 
             
-            if (boss.timeState !== 'STOPPED') {
+            if (boss.timeState !== 'STOPPED' && boss.timeState !== 'REWIND') {
                 p.stroke(255, 215, 0); p.strokeWeight(2);
                 p.line(0, -5, 0, 45);
+            } else if (boss.timeState === 'REWIND') {
+                // Reverse Flow Visual
+                p.stroke(255, 215, 0); p.strokeWeight(2);
+                p.line(0, 45, 0, -5); 
             }
             p.pop();
         };

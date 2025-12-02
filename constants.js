@@ -17,6 +17,7 @@ export const BOSS_TRIANGLE_SIZE = 50;
 export const BOSS_HEXAGON_SIZE = 45;
 export const BOSS_HOURGLASS_SIZE = 50;
 export const BOSS_MATH_SIZE = 50;
+export const BOSS_STAR_SIZE = 50; // New Star Size
 export const BOSS_MAX_HP = 5000;
 export const BOSS_SCORE_REWARD = 50000;
 export const SCORE_PER_HIT = 10;
@@ -40,6 +41,7 @@ export const COLORS = {
   BOSS_HEXAGON: [0, 255, 255], // Electric Cyan
   BOSS_HOURGLASS: [218, 165, 32], // Golden Rod
   BOSS_MATH: [200, 200, 200], // Metallic White
+  BOSS_STAR: [255, 220, 50], // Bright Yellow
   BOSS_GHOST: [218, 165, 32, 100], // Transparent Gold for Echo
   BOSS_SHADOW: [100, 100, 100, 150], // Dark Shadow Clone
   
@@ -61,6 +63,7 @@ export const COLORS = {
   BOSS_BULLET_RIEMANN: [100, 100, 255], // Integral Blue
   BOSS_BULLET_MODULO: [180, 50, 255], // Modulo Purple
   BOSS_BULLET_FACTORIAL: [255, 69, 0], // Factorial Red-Orange
+  BOSS_BULLET_STAR: [255, 255, 150], // Star Bullet Pale Yellow
   BOSS_MATH_GRID: [50, 50, 80, 50], // Faint Grid
   
   BOSS_LASER: [50, 255, 200],

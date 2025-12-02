@@ -1,5 +1,6 @@
 
 
+
 import { COLORS, BOSS_TRIANGLE_SIZE, PLAYER_HITBOX } from '../../constants.js';
 import { Patterns } from '../patterns.js';
 import { lineCircleIntersect } from '../utils.js';
@@ -13,12 +14,26 @@ export const TriangleBoss = {
         boss.teleportState = 'IDLE';
         boss.teleportTimer = 0;
         boss.opacity = 255;
+        boss.scale = 1; // For animation
         boss.laserPhase = 'COOLDOWN';
         boss.laserTimer = 120;
     },
 
     onStageChange: (boss, stage) => {
         // No specific init
+    },
+
+    drawIntro: (p, boss, introProgress, triggerEffect) => {
+        // Glitch Teleport In
+        p.scale(introProgress);
+        
+        p.fill(...COLORS.BOSS_TRIANGLE); p.noStroke();
+        p.beginShape();
+        for(let i=0; i<3; i++) {
+            let a = (p.TWO_PI/3) * i - p.PI/2 + (introProgress * p.TWO_PI);
+            p.vertex(Math.cos(a) * BOSS_TRIANGLE_SIZE, Math.sin(a) * BOSS_TRIANGLE_SIZE);
+        }
+        p.endShape(p.CLOSE);
     },
 
     update: (p, boss, player, data) => {
@@ -29,6 +44,7 @@ export const TriangleBoss = {
 
         // Teleport Logic
         if (boss.teleportState === 'IDLE') {
+            boss.scale = p.lerp(boss.scale, 1, 0.1);
             boss.pos.x = p.width / 2 + Math.sin(frame * 0.03) * 200;
             boss.pos.y = 80 + Math.abs(Math.sin(frame * 0.04)) * 50;
             if (frame % 300 === 0) {
@@ -36,8 +52,10 @@ export const TriangleBoss = {
                 boss.teleportTimer = 30;
             }
         } else if (boss.teleportState === 'OUT') {
+            // Implode Animation
+            boss.scale = p.lerp(boss.scale, 0, 0.15);
             boss.opacity -= 8;
-            if (boss.opacity <= 0) {
+            if (boss.scale <= 0.05) {
                 boss.opacity = 0;
                 boss.teleportState = 'WAIT';
                 boss.teleportTimer = 20;
@@ -48,8 +66,11 @@ export const TriangleBoss = {
             boss.teleportTimer--;
             if (boss.teleportTimer <= 0) boss.teleportState = 'IN';
         } else if (boss.teleportState === 'IN') {
+            // Explode Animation
+            boss.scale = p.lerp(boss.scale, 1, 0.15);
             boss.opacity += 8;
-            if (boss.opacity >= 255) {
+            if (boss.scale >= 0.95) {
+                boss.scale = 1;
                 boss.opacity = 255;
                 boss.teleportState = 'IDLE';
             }
@@ -72,7 +93,7 @@ export const TriangleBoss = {
             }
 
             if (boss.laserPhase !== 'COOLDOWN') {
-                const s = BOSS_TRIANGLE_SIZE;
+                const s = BOSS_TRIANGLE_SIZE * boss.scale;
                 for(let i=0; i<3; i++) {
                     const angle = boss.angle + (p.TWO_PI/3)*i - p.PI/2;
                     const vx = boss.pos.x + Math.cos(angle) * s;
@@ -89,7 +110,7 @@ export const TriangleBoss = {
                         p.drawingContext.setLineDash([]);
                     } else if (boss.laserPhase === 'FIRE') {
                         if (Array.isArray(COLORS.BOSS_LASER)) p.stroke(...COLORS.BOSS_LASER); else p.stroke(COLORS.BOSS_LASER);
-                        p.strokeWeight(6);
+                        p.strokeWeight(6 + Math.sin(frame*0.5)*2);
                         p.line(vx, vy, lx, ly);
                         p.strokeWeight(2);
                         p.stroke(255);
@@ -147,6 +168,10 @@ export const TriangleBoss = {
     },
 
     draw: (p, boss, frame) => {
+        p.scale(boss.scale);
+        if (boss.flashTimer > 0) { p.fill(255); p.stroke(255); }
+        else { p.fill(...COLORS.BOSS_TRIANGLE); p.noStroke(); }
+
         // Outer Triangle
         p.beginShape();
         for(let i=0; i<3; i++) {
@@ -154,14 +179,17 @@ export const TriangleBoss = {
             p.vertex(Math.cos(a) * BOSS_TRIANGLE_SIZE, Math.sin(a) * BOSS_TRIANGLE_SIZE);
         }
         p.endShape(p.CLOSE);
-        // Inner Spinning Triangle
-        p.noFill(); p.stroke(255); p.strokeWeight(1);
-        p.rotate(frame * 0.05);
-        p.beginShape();
-        for(let i=0; i<3; i++) {
-            let a = (p.TWO_PI/3) * i - p.PI/2;
-            p.vertex(Math.cos(a) * (BOSS_TRIANGLE_SIZE/2), Math.sin(a) * (BOSS_TRIANGLE_SIZE/2));
+        
+        // Inner Spinning Triangle (Counter Rotating)
+        if (boss.flashTimer <= 0) {
+            p.noFill(); p.stroke(255); p.strokeWeight(2);
+            p.rotate(-frame * 0.1); // Spin faster
+            p.beginShape();
+            for(let i=0; i<3; i++) {
+                let a = (p.TWO_PI/3) * i - p.PI/2;
+                p.vertex(Math.cos(a) * (BOSS_TRIANGLE_SIZE/2), Math.sin(a) * (BOSS_TRIANGLE_SIZE/2));
+            }
+            p.endShape(p.CLOSE);
         }
-        p.endShape(p.CLOSE);
     }
 };

@@ -1,4 +1,6 @@
 
+
+
 import { COLORS, OVAL_BOSS_MOVE_SPEED } from '../../constants.js';
 import { Patterns } from '../patterns.js';
 
@@ -8,6 +10,7 @@ export const OvalBoss = {
 
     init: (boss) => {
         boss.squash = { x: 1, y: 1 };
+        boss.rollAngle = 0;
     },
 
     onStageChange: (boss, stage) => {
@@ -16,11 +19,30 @@ export const OvalBoss = {
         if (boss.vel.y > 0) boss.vel.y = OVAL_BOSS_MOVE_SPEED * 0.7 * speedMult; else boss.vel.y = -OVAL_BOSS_MOVE_SPEED * 0.7 * speedMult;
     },
 
+    drawIntro: (p, boss, introProgress, triggerEffect) => {
+        // Slide in from side
+        let xOffset = 600 * (1 - introProgress);
+        p.translate(xOffset, 0);
+        
+        p.fill(...COLORS.BOSS_OVAL); p.noStroke();
+        p.ellipse(0, 0, 100, 60);
+        
+        // Speed lines
+        p.stroke(255, 100); p.strokeWeight(2);
+        p.line(-60, -20, -100, -20);
+        p.line(-60, 20, -100, 20);
+        p.line(-60, 0, -120, 0);
+    },
+
     update: (p, boss, player, data) => {
         const { frame, stage, baseSpeed, spawnBullet, createExplosion, stageTransitionTimer } = data;
 
         // Movement & Bouncing
         boss.pos.add(boss.vel);
+        
+        // Roll animation based on X velocity
+        boss.rollAngle += boss.vel.x * 0.05;
+
         boss.squash.x = p.lerp(boss.squash.x, 1, 0.1);
         boss.squash.y = p.lerp(boss.squash.y, 1, 0.1);
         
@@ -67,8 +89,18 @@ export const OvalBoss = {
     },
 
     draw: (p, boss, frame) => {
-         p.ellipse(0, 0, 100, 60);
-         p.noFill(); p.stroke(255, 200); 
-         p.ellipse(0, 0, 60 + Math.sin(frame * 0.2)*10, 30);
+        p.rotate(boss.rollAngle);
+        
+        if (boss.flashTimer > 0) { p.fill(255); p.stroke(255); }
+        else { p.fill(...COLORS.BOSS_OVAL); p.noStroke(); }
+
+        p.ellipse(0, 0, 100 * boss.squash.x, 60 * boss.squash.y);
+        
+        // Details
+        if (boss.flashTimer <= 0) {
+            p.noFill(); p.stroke(255, 200); p.strokeWeight(2);
+            p.ellipse(0, 0, (60 + Math.sin(frame * 0.2)*10) * boss.squash.x, 30 * boss.squash.y);
+            p.line(-40, 0, 40, 0); // Axle line to show rotation
+        }
     }
 };

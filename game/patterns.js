@@ -1,5 +1,6 @@
 
 
+
 export const Patterns = {
   // 1. Simple aimed shot
   aimed: (p, origin, target, spawn, speed) => {
@@ -402,6 +403,88 @@ export const Patterns = {
           const angle = p.random(p.TWO_PI);
           const s = speed * p.random(0.5, 2.0); // Variable speed for chaotic expansion
           spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), s, [255, 69, 0], 'CIRCLE', 0, false, true);
+      }
+  },
+
+  // --- STAR BOSS PATTERNS ---
+  // High quantity, low speed, beautiful geometry
+
+  // 35. Star Radial (10-way stream from tips)
+  starRadial: (p, origin, frame, points, spawn, speed) => {
+      // Increased rotation speed from 0.01 to 0.04 to create wider gaps between streams
+      const rotation = frame * 0.04; 
+      const r = 60; 
+      // Doubled points logic for caller or internal loop
+      for(let i=0; i<points; i++) {
+          const angle = rotation + (p.TWO_PI / points) * i - p.PI/2;
+          const tipX = origin.x + Math.cos(angle) * r;
+          const tipY = origin.y + Math.sin(angle) * r;
+          // Dense stream - spawn 2 slight variations
+          spawn(tipX, tipY, Math.cos(angle), Math.sin(angle), speed * 0.4, [255, 255, 150], 'CIRCLE');
+      }
+  },
+
+  // 36. Star Spiral Galaxy
+  starSpiral: (p, origin, frame, arms, spawn, speed) => {
+      const rotation = frame * 0.03; // Faster spin for visual
+      for(let i=0; i<arms; i++) {
+          const angle = rotation + (p.TWO_PI / arms) * i;
+          // Spawn multiple per frame for density
+          spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), speed * 0.3, [255, 220, 50], 'CIRCLE');
+      }
+  },
+
+  // 37. Star Shape Expansion
+  starShape: (p, origin, frame, spawn, speed) => {
+      // Draw a star shape with bullets
+      const points = 5;
+      const totalBullets = 120; // Massive increase for definition
+      const angleOffset = frame * 0.01;
+
+      for (let i = 0; i < totalBullets; i++) {
+          const t = p.map(i, 0, totalBullets, 0, p.TWO_PI);
+          // Star formula
+          const r = 1 + 0.5 * Math.cos(5 * t);
+          const angle = t + angleOffset;
+          // Add slight jitter to create a "cloudy" star shape
+          const jitter = p.random(0.95, 1.05);
+          spawn(origin.x, origin.y, Math.cos(angle)*r*jitter, Math.sin(angle)*r*jitter, speed * 0.2, [255, 200, 0], 'CIRCLE');
+      }
+  },
+
+  // 38. Star Mandala (Complex geometric rotation)
+  starMandala: (p, origin, frame, spawn, speed) => {
+      const arms = 12; // Increased arms
+      const layers = 5; // Increased layers
+      // Continuous stream vs periodic burst? Let's do periodic high-density
+      if (frame % 8 === 0) {
+          for(let l=0; l<layers; l++) {
+              const layerSpeed = speed * (0.3 + l * 0.15); // Slower start
+              const dir = l % 2 === 0 ? 1 : -1;
+              const offset = frame * 0.02 * dir;
+              for(let i=0; i<arms; i++) {
+                  const angle = offset + (p.TWO_PI / arms) * i;
+                  spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), layerSpeed, [255, 255, 100], 'CIRCLE');
+              }
+          }
+      }
+  },
+
+  // 39. Star Wave (Oscillating speed ring with gaps)
+  starWave: (p, origin, frame, spawn, baseSpeed) => {
+      const count = 72; // High density ring
+      const angleOffset = frame * 0.01;
+      for(let i=0; i<count; i++) {
+          const angle = (p.TWO_PI / count) * i + angleOffset;
+          // Speed varies by angle to create a flower/star shape over time
+          // Use Math.pow to sharpen the petals and create larger gaps between them
+          const wave = 1 + 0.6 * Math.sin(angle * 5); // 5 peaks
+          
+          // Only spawn if wave is above threshold to create physical gaps? 
+          // Or just let speed variance handle it (grazing).
+          // Let's use speed variance.
+          const s = baseSpeed * 0.3 * wave;
+          spawn(origin.x, origin.y, Math.cos(angle), Math.sin(angle), s, [255, 200, 50], 'CIRCLE');
       }
   }
 

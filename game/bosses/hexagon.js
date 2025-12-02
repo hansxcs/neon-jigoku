@@ -1,4 +1,6 @@
 
+
+
 import { COLORS, BOSS_HEXAGON_SIZE } from '../../constants.js';
 import { Patterns } from '../patterns.js';
 
@@ -11,10 +13,29 @@ export const HexagonBoss = {
         boss.hexState = 'IDLE';
         boss.hexTimer = 0;
         boss.pendingAttacks = [];
+        boss.scale = 1;
     },
 
     onStageChange: (boss, stage) => {
         boss.spinSpeed = 0.05 + (stage * 0.05);
+    },
+
+    drawIntro: (p, boss, introProgress, triggerEffect) => {
+        // Lightning Strike
+        if (introProgress < 0.5) {
+             p.stroke(...COLORS.BOSS_LIGHTNING);
+             p.strokeWeight(10 * introProgress);
+             p.line(0, -500, 0, 0);
+        } else {
+             p.scale(p.map(introProgress, 0.5, 1, 0, 1));
+             p.stroke(...COLORS.BOSS_HEXAGON); p.strokeWeight(4); p.noFill();
+             p.beginShape();
+             for(let i=0; i<6; i++) {
+                let a = p.TWO_PI/6 * i;
+                p.vertex(Math.cos(a)*BOSS_HEXAGON_SIZE, Math.sin(a)*BOSS_HEXAGON_SIZE);
+             }
+             p.endShape(p.CLOSE);
+        }
     },
 
     update: (p, boss, player, data) => {
@@ -26,6 +47,7 @@ export const HexagonBoss = {
         // State Machine
         switch(boss.hexState) {
             case 'IDLE':
+                boss.scale = p.lerp(boss.scale, 1, 0.2);
                 if (stage >= 1) { 
                     boss.hexTimer++;
                     let teleportThreshold = 180;
@@ -36,19 +58,25 @@ export const HexagonBoss = {
                 boss.pos.y += Math.sin(frame * 0.1) * 2;
                 break;
             case 'TELEPORT_OUT':
-                boss.hexState = 'TELEPORT_IN';
-                let nx = p.random(100, p.width - 100);
-                let ny = p.random(50, 250);
-                if (stage >= 4) ny = p.random(50, 400); 
-                boss.pos.x = nx; boss.pos.y = ny;
+                boss.scale = p.lerp(boss.scale, 0, 0.2);
+                if (boss.scale <= 0.05) {
+                    boss.hexState = 'TELEPORT_IN';
+                    let nx = p.random(100, p.width - 100);
+                    let ny = p.random(50, 250);
+                    if (stage >= 4) ny = p.random(50, 400); 
+                    boss.pos.x = nx; boss.pos.y = ny;
+                }
                 break;
             case 'TELEPORT_IN':
-                 createExplosion(boss.pos.x, boss.pos.y, COLORS.BOSS_LIGHTNING, 15);
-                 // Spawn targeted meteor
-                 if (stage >= 1) {
-                     spawnMeteorAttack(player.pos.x + p.random(-100, 100), -50, player.pos.x, player.pos.y, 30, 30);
+                 boss.scale = p.lerp(boss.scale, 1, 0.2);
+                 if (boss.scale >= 0.95) {
+                     createExplosion(boss.pos.x, boss.pos.y, COLORS.BOSS_LIGHTNING, 15);
+                     // Spawn targeted meteor
+                     if (stage >= 1) {
+                         spawnMeteorAttack(player.pos.x + p.random(-100, 100), -50, player.pos.x, player.pos.y, 30, 30);
+                     }
+                     boss.hexState = 'IDLE'; boss.hexTimer = 0;
                  }
-                 boss.hexState = 'IDLE'; boss.hexTimer = 0;
                 break;
         }
 
@@ -76,21 +104,28 @@ export const HexagonBoss = {
                      else p.stroke(0, 255, 255);
                  }
                  
-                 let tx = atk.x + atk.dx * 1200; 
-                 let ty = atk.y + atk.dy * 1200;
+                 // Calculate extended line coordinates (Project backwards and forwards)
+                 const EXTEND_DIST = 2000;
+                 let startX = atk.x - atk.dx * EXTEND_DIST;
+                 let startY = atk.y - atk.dy * EXTEND_DIST;
+                 let endX = atk.x + atk.dx * EXTEND_DIST; 
+                 let endY = atk.y + atk.dy * EXTEND_DIST;
                  
-                 // Jagged Line
-                 p.noFill(); p.beginShape(); p.vertex(atk.x, atk.y);
-                 let segments = 10;
+                 // Jagged Line Logic
+                 p.noFill(); p.beginShape(); 
+                 p.vertex(startX, startY);
+                 
+                 let segments = 20; // More segments for longer line
                  for(let j=1; j<segments; j++) { 
                      let t = j/segments; 
-                     let px = p.lerp(atk.x, tx, t); 
-                     let py = p.lerp(atk.y, ty, t); 
+                     let px = p.lerp(startX, endX, t); 
+                     let py = p.lerp(startY, endY, t); 
                      px += p.random(-5, 5); 
                      py += p.random(-5, 5); 
                      p.vertex(px, py); 
                  }
-                 p.vertex(tx, ty); p.endShape();
+                 p.vertex(endX, endY); 
+                 p.endShape();
 
                  if (atk.timer <= 0) {
                      spawnBullet(atk.x, atk.y, atk.dx, atk.dy, baseSpeed * 6, COLORS.BOSS_METEOR, 'METEOR');
@@ -130,9 +165,12 @@ export const HexagonBoss = {
     },
 
     draw: (p, boss, frame) => {
+        p.scale(boss.scale);
         const radius = BOSS_HEXAGON_SIZE;
-        // Lightning Hexagon Visual
-        if (Array.isArray(boss.color)) p.stroke(...boss.color); else p.stroke(0, 255, 255);
+        
+        if (boss.flashTimer > 0) { p.stroke(255); }
+        else if (Array.isArray(boss.color)) p.stroke(...boss.color); else p.stroke(0, 255, 255);
+        
         p.strokeWeight(3);
         p.noFill();
         p.beginShape();
@@ -150,7 +188,7 @@ export const HexagonBoss = {
             p.vertex(mx, my);
         }
         p.endShape(p.CLOSE);
-        if (frame % 5 === 0) {
+        if (frame % 5 === 0 && boss.flashTimer <= 0) {
             p.stroke(255, 200);
             p.strokeWeight(1);
             p.line(p.random(-radius, radius), p.random(-radius, radius), p.random(-radius, radius), p.random(-radius, radius));

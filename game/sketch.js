@@ -1,5 +1,4 @@
 
-
 import p5 from 'p5';
 import { COLORS, PLAYER_SPEED, PLAYER_RADIUS, BOSS_RADIUS, BOSS_SQUARE_SIZE, BOSS_MAX_HP, BULLET_SPEED, PLAYER_HITBOX, ENEMY_BULLET_BASE_SPEED, MAX_WEAPON_LEVEL, BASE_BULLET_SPEED_SCALE, OVAL_BOSS_MOVE_SPEED, SHIELD_DURATION, MAX_SHIELD_CHARGES, BOSS_SCORE_REWARD, SCORE_PER_HIT } from '../constants.js';
 import { GameState, PowerUpType, WeaponType } from '../types.js';
@@ -11,7 +10,9 @@ import { OvalBoss } from './bosses/oval.js';
 import { HexagonBoss } from './bosses/hexagon.js';
 import { HourglassBoss } from './bosses/hourglass.js';
 import { MathBoss } from './bosses/math.js';
+import { StarBoss } from './bosses/star.js';
 import { drawGlitch } from './utils.js';
+import { SoundManager } from './sound.js';
 
 const BOSS_MODULES = {
     'CIRCLE': CircleBoss,
@@ -21,7 +22,20 @@ const BOSS_MODULES = {
     'OVAL': OvalBoss,
     'HEXAGON': HexagonBoss,
     'HOURGLASS': HourglassBoss,
-    'MATH': MathBoss
+    'MATH': MathBoss,
+    'STAR': StarBoss
+};
+
+const BOSS_TITLES = {
+    'CIRCLE': "THE CORE",
+    'SQUARE': "THE CONSTRUCT",
+    'TRIANGLE': "THE PRISM",
+    'HEART': "THE SEDUCTRESS",
+    'OVAL': "THE RICOCHET",
+    'HEXAGON': "THE BLITZ",
+    'HOURGLASS': "THE CHRONOS",
+    'MATH': "THE CALCULATOR",
+    'STAR': "THE SUPERNOVA"
 };
 
 const MAX_PARTICLES = 200;
@@ -65,7 +79,10 @@ export const createSketch = (
       radius: BOSS_RADIUS,
       angle: 0,
       opacity: 255,
+      flashTimer: 0, // Visual feedback when hit
       nextPowerUpHp: 0,
+      shield: 0, // Add generic shield prop
+      maxShield: 0,
       // ... boss specific properties injected by init()
     };
 
@@ -75,6 +92,13 @@ export const createSketch = (
     let globalTimeScale = 1.0; 
     let simTime = 0; 
     let frame = 0;
+    
+    // Intro Logic
+    let introTimer = 0;
+    let introActive = false;
+    let currentBossTitle = "";
+    let introShake = 0;
+    let introFlash = 0;
 
     // Arrays
     let enemies = [];
@@ -113,6 +137,7 @@ export const createSketch = (
             type: 'METEOR', x: x, y: y, dx: Math.cos(angle), dy: Math.sin(angle),
             timer: delay, size: size
         });
+        SoundManager.playSFX('alert');
     };
 
     const spawnStasisOrb = () => {
@@ -168,11 +193,15 @@ export const createSketch = (
     p.setup = () => {
       p.createCanvas(targetW, targetH);
       p.frameRate(60);
+      
+      SoundManager.init(); // Init Sound
+
       for(let i=0; i<100; i++) stars.push({ x: p.random(p.width), y: p.random(p.height), z: p.random(0.5, 3) });
       if (triggerShieldRef) {
           triggerShieldRef.current = () => {
               if (player.shieldCharges > 0 && player.shieldTimer <= 0 && gameState === GameState.PLAYING && !player.frozen) {
                   player.shieldCharges--; player.shieldTimer = SHIELD_DURATION; updatePlayerStatus();
+                  SoundManager.playSFX('shield');
               }
           };
       }
@@ -189,6 +218,9 @@ export const createSketch = (
       player.hp = 100; player.bullets = []; player.weaponType = WeaponType.DEFAULT; player.weaponLevel = 1; player.invulnerable = 0; player.frozen = false;
       boss.hp = BOSS_MAX_HP; boss.active = true; boss.pos = p.createVector(p.width / 2, 100); boss.vel = p.createVector(p.random([-3,3]), p.random(2,3));
       boss.nextPowerUpHp = BOSS_MAX_HP * 0.95;
+      boss.flashTimer = 0;
+      boss.shield = 0; 
+      boss.maxShield = 0;
       
       if (bossType !== 'RANDOM') boss.type = bossType;
       else boss.type = p.random(Object.keys(BOSS_MODULES));
@@ -197,12 +229,21 @@ export const createSketch = (
       if (BOSS_MODULES[boss.type] && BOSS_MODULES[boss.type].init) {
           BOSS_MODULES[boss.type].init(boss);
       }
+      
+      // Setup Intro (Shorter, Cleaner)
+      introActive = true;
+      introTimer = 120; // 2 seconds (Reduced from 180)
+      currentBossTitle = BOSS_TITLES[boss.type] || "UNKNOWN THREAT";
+      introShake = 0;
+      introFlash = 0;
 
       currentStageIndex = 0; stageTransitionTimer = 0; globalTimeScale = 1.0; simTime = 0; frame = 0; score = 0;
       enemies = []; enemyBullets = []; powerUps = []; particles = []; blockers = []; sandTraps = []; stasisOrbs = []; mathParticles = [];
 
       setScore(0); setHealth(100); setBossHealth(100); setStage(1);
       setWeaponInfo({ name: 'DEFAULT', level: 1, timer: 0 }); updatePlayerStatus();
+      
+      SoundManager.playBGM(boss.type); // Start Music
     };
 
     const updatePlayerStatus = () => {
@@ -229,14 +270,22 @@ export const createSketch = (
 
       p.background(COLORS.BACKGROUND, 100);
       
-      // Camera Shake
-      if (stageTransitionTimer > 150) { p.push(); p.translate(p.random(-8, 8), p.random(-8, 8)); }
+      // Global Intro Shake (Subtle)
+      if (introShake > 0) {
+          p.push();
+          // Minimal shake
+          const shakeAmt = Math.min(introShake, 5); 
+          p.translate(p.random(-shakeAmt, shakeAmt), p.random(-shakeAmt, shakeAmt));
+          introShake *= 0.8; // Fast decay
+      }
+      
+      // Camera Shake (Gameplay)
+      if (stageTransitionTimer > 150) { p.push(); p.translate(p.random(-5, 5), p.random(-5, 5)); }
 
       // Stars (Performance Optimized)
-      p.noFill(); 
+      p.stroke(255, 150);
       for(let star of stars) {
         star.y += star.z; if(star.y > p.height) { star.y = 0; star.x = p.random(p.width); }
-        p.stroke(255, 150);
         p.strokeWeight(star.z);
         p.point(star.x, star.y);
       }
@@ -274,12 +323,80 @@ export const createSketch = (
 
       if (gameState !== GameState.PLAYING) {
         if (stageTransitionTimer > 150) p.pop();
+        if (introShake > 0) p.pop(); // Restore shake push
         return;
       }
+      
+      // --- BOSS INTRO SEQUENCE (CLEANED UP) ---
+      if (introActive) {
+          introTimer--;
+          const maxIntro = 120;
+          const introProgress = 1.0 - (introTimer/maxIntro);
+          
+          const triggerIntroEffect = (type, mag) => {
+              if (type === 'SHAKE') introShake = mag;
+              if (type === 'FLASH') introFlash = mag;
+          };
+
+          // Call Boss Intro Draw
+          if (BOSS_MODULES[boss.type] && BOSS_MODULES[boss.type].drawIntro) {
+              p.push();
+              p.translate(p.width/2, 200);
+              BOSS_MODULES[boss.type].drawIntro(p, boss, introProgress, triggerIntroEffect);
+              p.pop();
+          }
+
+          // Draw Cinematic Overlay (Cleaner, fading)
+          // Fade out at end
+          let alpha = 255;
+          if (introProgress > 0.8) alpha = p.map(introProgress, 0.8, 1.0, 255, 0);
+          
+          p.noStroke();
+          p.fill(0, alpha * 0.7); // Semi-transparent black bars
+          const barHeight = p.map(introProgress, 0, 0.2, 0, 80);
+          p.rect(0, 0, p.width, barHeight);
+          p.rect(0, p.height - barHeight, p.width, barHeight);
+          
+          // Text Fade In
+          if (introProgress > 0.2) {
+              p.textAlign(p.CENTER, p.CENTER);
+              p.fill(255, alpha);
+              p.textSize(50); 
+              p.text(boss.type, p.width/2, p.height/2);
+              
+              p.fill(150, 200, 255, alpha);
+              p.textSize(20); 
+              p.text(currentBossTitle, p.width/2, p.height/2 + 40);
+          }
+
+          if (introTimer <= 0) {
+              introActive = false;
+          }
+          
+          // Subtle Flash only
+          if (introFlash > 0) {
+              p.fill(255, Math.min(introFlash, 100)); // Cap flash opacity
+              p.rect(0, 0, p.width, p.height);
+              introFlash -= 10;
+          }
+
+          if (introShake > 0) p.pop(); // Restore global shake push
+          return; // Skip main game loop logic
+      }
+      
+      if (introShake > 0) p.pop(); // Restore global shake push if not in intro but lingering
 
       // --- Update ---
       frame++; simTime += globalTimeScale;
-      if (player.shieldTimer > 0) { player.shieldTimer--; if (frame % 30 === 0) updatePlayerStatus(); }
+      
+      // Update Player Shield Timer Logic
+      if (player.shieldTimer > 0) { 
+          player.shieldTimer--; 
+          // Force update when timer hits exactly 0 to fix UI stuck at '1s'
+          if (player.shieldTimer === 0) updatePlayerStatus();
+          else if (frame % 30 === 0) updatePlayerStatus(); 
+      }
+      
       if (player.freezeTimer > 0) { player.freezeTimer--; if (player.freezeTimer <= 0) player.frozen = false; }
 
       // 1. Player Move
@@ -323,6 +440,7 @@ export const createSketch = (
         setWeaponInfo({ name: getName(player.weaponType), level: player.weaponLevel, timer: Math.ceil(player.weaponTimer / 60) });
       }
       if (!player.frozen && frame % (player.weaponType === WeaponType.RAPID ? Math.max(2, 5 - player.weaponLevel) : 8) === 0) {
+          SoundManager.playSFX('shoot');
           const lvl = player.weaponLevel;
           if (player.weaponType === WeaponType.DEFAULT) {
                player.bullets.push({ pos: player.pos.copy().add(-5,-10), vel: p.createVector(0,-BULLET_SPEED), dmg: 10, homing: false });
@@ -345,6 +463,8 @@ export const createSketch = (
 
       // 3. Boss Update
       if (boss.active) {
+          if (boss.flashTimer > 0) boss.flashTimer--;
+
           // Stage Calculation
           const pct = boss.hp / BOSS_MAX_HP;
           let stage = 0; if(pct<0.2) stage=4; else if(pct<0.4) stage=3; else if(pct<0.6) stage=2; else if(pct<0.8) stage=1;
@@ -352,6 +472,7 @@ export const createSketch = (
           if (stage > currentStageIndex) {
               currentStageIndex = stage; setStage(stage + 1); stageTransitionTimer = 180;
               enemyBullets = []; stasisOrbs = []; createExplosion(boss.pos.x, boss.pos.y, COLORS[`BOSS_${boss.type}`] || [255,255,255], 40);
+              SoundManager.playSFX('explosion');
               // Init Stage Specifics
               if (BOSS_MODULES[boss.type] && BOSS_MODULES[boss.type].onStageChange) {
                   BOSS_MODULES[boss.type].onStageChange(boss, stage, spawnMinion);
@@ -374,15 +495,19 @@ export const createSketch = (
 
       // 4. Draw Boss
       if (boss.active) {
-          if (stageTransitionTimer > 0) { if (frame % 4 < 2) p.fill(255); else p.fill(...(COLORS[`BOSS_${boss.type}`] || [255,255,255])); boss.opacity = 255; } 
-          else {
-              const c = COLORS[`BOSS_${boss.type}`] || [255,255,255];
-              p.fill(c[0], c[1], c[2], boss.opacity);
-          }
-          
           p.push();
           p.translate(boss.pos.x, boss.pos.y);
           p.rotate(boss.angle);
+          
+          if (stageTransitionTimer > 0) { 
+               // Warning Flash
+               if (frame % 4 < 2) { p.fill(255); p.stroke(255); }
+               else { 
+                   // Let specific draw handle default, but default usually needs explicit set if generic
+               }
+               boss.opacity = 255; 
+          } 
+          
           // Delegate Draw
           if (BOSS_MODULES[boss.type]) BOSS_MODULES[boss.type].draw(p, boss, frame);
           p.pop();
@@ -514,9 +639,10 @@ export const createSketch = (
           p.fill(textColor); p.textAlign(p.CENTER, p.CENTER); p.textSize(12); p.text(txt, pu.x, pu.y);
           
           if (d < player.radius + 15) {
+              SoundManager.playSFX('powerup');
               if (pu.type === PowerUpType.HEAL) { player.hp = Math.min(100, player.hp + 20); setHealth(player.hp); }
               else if (pu.type === PowerUpType.SHIELD) { player.shieldCharges = Math.min(MAX_SHIELD_CHARGES, player.shieldCharges + 1); updatePlayerStatus(); }
-              else if (pu.type === PowerUpType.TRAP) { player.hp -= 30; setHealth(player.hp); createExplosion(player.pos.x, player.pos.y, COLORS.POWERUP_TRAP, 10); }
+              else if (pu.type === PowerUpType.TRAP) { player.hp -= 30; setHealth(player.hp); createExplosion(player.pos.x, player.pos.y, COLORS.POWERUP_TRAP, 10); SoundManager.playSFX('explosion'); }
               else {
                   // If same weapon, level up. If different, switch.
                   // Map PowerUpType to WeaponType
@@ -533,17 +659,18 @@ export const createSketch = (
       // Collisions
       if (player.invulnerable > 0) player.invulnerable--;
       if (player.invulnerable % 10 < 5) {
-          p.fill(...COLORS.PLAYER); p.noStroke(); p.triangle(player.pos.x, player.pos.y-PLAYER_RADIUS*1.5, player.pos.x-PLAYER_RADIUS, player.pos.y+PLAYER_RADIUS, player.pos.x+PLAYER_RADIUS, player.pos.y+PLAYER_RADIUS);
+          p.fill(...COLORS.PLAYER); p.noStroke(); p.triangle(player.pos.x, player.pos.y-PLAYER_RADIUS*1.5, player.pos.x-PLAYER_RADIUS, player.pos.y+PLAYER_RADIUS, player.pos.x+PLAYER_RADIUS, player.pos.y+PLAYER_RADIUS, player.pos.y+PLAYER_RADIUS);
           p.fill(255, 0, 0); p.circle(player.pos.x, player.pos.y, PLAYER_HITBOX * 2);
           if (player.shieldTimer > 0) { p.noFill(); p.stroke(...COLORS.PLAYER_SHIELD); p.strokeWeight(2); p.circle(player.pos.x, player.pos.y, 50); }
       }
       for (let i = 0; i < enemyBullets.length; i++) {
           let b = enemyBullets[i];
           if (p.dist(player.pos.x, player.pos.y, b.pos.x, b.pos.y) < player.hitbox + b.r) {
-             if (b.shape === 'HEAL') { player.hp = Math.min(100, player.hp + 10); setHealth(player.hp); enemyBullets.splice(i, 1); continue; }
+             if (b.shape === 'HEAL') { player.hp = Math.min(100, player.hp + 10); setHealth(player.hp); enemyBullets.splice(i, 1); SoundManager.playSFX('powerup'); continue; }
              if (player.invulnerable <= 0 && player.shieldTimer <= 0) {
                player.hp -= Math.ceil(10 / userSpeedScale); setHealth(player.hp); player.invulnerable = 60; createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 10); enemyBullets.splice(i, 1);
-               if (player.hp <= 0) { setGameState(GameState.GAME_OVER); gameState = GameState.GAME_OVER; }
+               SoundManager.playSFX('hit');
+               if (player.hp <= 0) { setGameState(GameState.GAME_OVER); gameState = GameState.GAME_OVER; SoundManager.stopBGM(); }
              } else enemyBullets.splice(i, 1);
           }
       }
@@ -553,6 +680,7 @@ export const createSketch = (
       if (p.dist(player.pos.x, player.pos.y, boss.pos.x, boss.pos.y) < bossTouch && player.invulnerable <= 0 && player.shieldTimer <= 0) {
              player.hp -= 20; setHealth(player.hp); player.invulnerable = 90; createExplosion(player.pos.x, player.pos.y, COLORS.PLAYER, 20);
              let a = Math.atan2(player.pos.y - boss.pos.y, player.pos.x - boss.pos.x); player.pos.x += Math.cos(a)*50; player.pos.y += Math.sin(a)*50;
+             SoundManager.playSFX('hit');
       }
 
       for (let i = player.bullets.length - 1; i >= 0; i--) {
@@ -566,6 +694,9 @@ export const createSketch = (
                         score += enemies[j].scoreVal || 100; setScore(score);
                         if(p.random()<0.5) powerUps.push({x: enemies[j].pos.x, y: enemies[j].pos.y, type: p.random([1,2,3,4,5]), radius: 10, active: true});
                         enemies.splice(j,1);
+                        SoundManager.playSFX('explosion');
+                   } else {
+                       SoundManager.playSFX('hit');
                    }
                    hit=true; break;
                }
@@ -575,15 +706,23 @@ export const createSketch = (
                 else if (boss.type === 'MATH' && boss.mathState !== 'SPIN') { hit = true; } // Shielded
                 else {
                     hit = true;
-                    if (boss.shield > 0) boss.shield -= b.dmg * player.damageMult;
+                    if (boss.shield > 0) {
+                        boss.shield -= b.dmg * player.damageMult;
+                        createExplosion(b.pos.x, b.pos.y, COLORS.BOSS_SHIELD, 3); // Shield hit feedback
+                        SoundManager.playSFX('shield');
+                    }
                     else {
                         boss.hp -= b.dmg * player.damageMult; setBossHealth((boss.hp/BOSS_MAX_HP)*100); score += SCORE_PER_HIT; setScore(score);
+                        // HIT FLASH
+                        boss.flashTimer = 3; 
+                        SoundManager.playSFX('hit');
+                        
                         while (boss.hp < boss.nextPowerUpHp) {
                              powerUps.push({ x: boss.pos.x, y: boss.pos.y, type: p.random([1,2,3,4,5]), radius: 10, active: true });
                              boss.nextPowerUpHp -= (BOSS_MAX_HP * 0.05);
                         }
                     }
-                    if (boss.hp <= 0) { score += BOSS_SCORE_REWARD; setScore(score); setGameState(GameState.VICTORY); gameState = GameState.VICTORY; boss.active = false; }
+                    if (boss.hp <= 0) { score += BOSS_SCORE_REWARD; setScore(score); setGameState(GameState.VICTORY); gameState = GameState.VICTORY; boss.active = false; SoundManager.stopBGM(); }
                 }
            }
            if (hit) player.bullets.splice(i, 1);

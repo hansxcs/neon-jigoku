@@ -1,4 +1,6 @@
 
+
+
 import { COLORS, BOSS_RADIUS } from '../../constants.js';
 import { Patterns } from '../patterns.js';
 
@@ -12,6 +14,20 @@ export const CircleBoss = {
 
     onStageChange: (boss, stage) => {
         // No specific stage init for circle
+    },
+
+    drawIntro: (p, boss, introProgress, triggerEffect) => {
+        // Expands from 0 to Full
+        p.noStroke();
+        p.fill(...COLORS.BOSS_CIRCLE);
+        let currentR = BOSS_RADIUS * introProgress;
+        
+        // Pulse Effect
+        let pulse = Math.sin(introProgress * p.PI * 4) * 10;
+        p.circle(0, 0, (currentR * 2) + pulse);
+        
+        p.noFill(); p.stroke(255, 200 * introProgress); p.strokeWeight(2);
+        p.circle(0, 0, (currentR * 2.5) - pulse);
     },
 
     update: (p, boss, player, data) => {
@@ -32,7 +48,18 @@ export const CircleBoss = {
         }
     },
 
-    draw: (p, boss) => {
-        p.circle(0, 0, boss.radius * 2);
+    draw: (p, boss, frame) => {
+        if (boss.flashTimer > 0) { p.fill(255); p.stroke(255); }
+        else { p.fill(...COLORS.BOSS_CIRCLE); p.noStroke(); }
+        
+        // Pulse Effect
+        let pulse = Math.sin(frame * 0.1) * 5;
+        p.circle(0, 0, (boss.radius * 2) + pulse);
+        
+        // Inner Ring
+        if (boss.flashTimer <= 0) {
+            p.noFill(); p.stroke(255, 150); p.strokeWeight(2);
+            p.circle(0, 0, (boss.radius * 1.5) - pulse);
+        }
     }
 };

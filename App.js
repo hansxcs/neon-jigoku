@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useRef } from 'react';
 import htm from 'htm';
 import GameCanvas from './components/GameCanvas.js';
@@ -198,7 +199,7 @@ const App = () => {
             <div className="w-full mb-3 flex flex-col items-center gap-1">
               <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Select Target</span>
               <div className="flex gap-1.5 flex-wrap justify-center">
-                ${['RANDOM', 'CIRCLE', 'SQUARE', 'TRIANGLE', 'HEART', 'OVAL', 'HEXAGON', 'HOURGLASS', 'MATH'].map(boss => html`
+                ${['RANDOM', 'CIRCLE', 'SQUARE', 'TRIANGLE', 'HEART', 'OVAL', 'HEXAGON', 'HOURGLASS', 'MATH', 'STAR'].map(boss => html`
                     <button key=${boss} onClick=${() => setSelectedBoss(boss)} className=${`px-2 py-1 rounded text-[10px] font-bold border transition-colors ${selectedBoss === boss ? 'bg-cyan-900 border-cyan-400 text-white' : 'border-gray-700 text-gray-500 hover:border-gray-500'}`}>
                         ${boss}
                     </button>

@@ -1,4 +1,6 @@
 
+
+
 import { COLORS, BOSS_SQUARE_SIZE } from '../../constants.js';
 import { Patterns } from '../patterns.js';
 import p5 from 'p5';
@@ -11,16 +13,29 @@ export const SquareBoss = {
         boss.dashState = 'IDLE';
         boss.dashTimer = 0;
         boss.targetPos = null;
+        boss.currentVel = {x: 0, y: 0}; // For tracking visual velocity
     },
 
     onStageChange: (boss, stage) => {
         // No specific stage init
     },
 
+    drawIntro: (p, boss, introProgress, triggerEffect) => {
+        // Falls from top
+        let yOffset = -500 * (1 - introProgress);
+        p.translate(0, yOffset);
+        
+        p.fill(...COLORS.BOSS_SQUARE); p.stroke(255);
+        p.rectMode(p.CENTER);
+        p.rect(0, 0, BOSS_SQUARE_SIZE, BOSS_SQUARE_SIZE);
+    },
+
     update: (p, boss, player, data) => {
         const { frame, stage, baseSpeed, spawnBullet, blockers, particles, stageTransitionTimer } = data;
 
         boss.angle += 0.02;
+
+        let prevPos = boss.pos.copy();
 
         // Dash State Machine
         switch(boss.dashState) {
@@ -79,6 +94,10 @@ export const SquareBoss = {
                 }
                 break;
         }
+        
+        // Calc visual velocity for shear effect
+        boss.currentVel.x = boss.pos.x - prevPos.x;
+        boss.currentVel.y = boss.pos.y - prevPos.y;
 
         if (stageTransitionTimer < 140 && boss.dashState !== 'DASH') {
             if (stage >= 0) if (frame % 8 === 0) Patterns.squareSpiral(p, boss.pos, frame, spawnBullet, baseSpeed);
@@ -90,8 +109,26 @@ export const SquareBoss = {
     },
 
     draw: (p, boss, frame) => {
+        if (boss.flashTimer > 0) { p.fill(255); p.stroke(255); }
+        else { p.fill(...COLORS.BOSS_SQUARE); p.stroke(...COLORS.BOSS_SQUARE); }
+        
         p.rectMode(p.CENTER);
+        
+        // Shear/Distortion Animation based on movement
+        p.push();
+        let shearAmt = p.constrain(boss.currentVel.x * 0.05, -0.5, 0.5);
+        p.shearX(shearAmt);
+        
         p.rect(0, 0, BOSS_SQUARE_SIZE, BOSS_SQUARE_SIZE);
+        
+        // Inner spinning square
+        if (boss.flashTimer <= 0) {
+            p.noFill(); p.stroke(255, 150); p.strokeWeight(2);
+            p.rotate(-boss.angle * 2);
+            p.rect(0, 0, BOSS_SQUARE_SIZE * 0.6, BOSS_SQUARE_SIZE * 0.6);
+        }
+        p.pop();
+
         // Forcefield Visual
         p.noFill(); p.stroke(255, 100); p.strokeWeight(1);
         p.rect(0, 0, BOSS_SQUARE_SIZE + 20 + Math.sin(frame*0.1)*10, BOSS_SQUARE_SIZE + 20 + Math.sin(frame*0.1)*10);
